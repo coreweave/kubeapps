@@ -62,9 +62,9 @@ spec:
           ports:
             - name: http
               containerPort: 8080
-          {{- if .Values.dashboard.resources }}
-          resources: {{- toYaml .Values.dashboard.resources | nindent 12 }}
-          {{- end }}
+{{/*          {{- if .Values.dashboard.resources }}*/}}
+{{/*          resources: {{- toYaml .Values.dashboard.resources | nindent 12 }}*/}}
+{{/*          {{- end }}*/}}
       volumes:
         - name: vhost
           configMap:

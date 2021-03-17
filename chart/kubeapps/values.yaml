@@ -465,15 +465,13 @@ dashboard:
   ## ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes
   ##
   livenessProbe:
-    httpGet:
-      path: /
-      port: 8080
+    tcpSocket:
+      port: http
     initialDelaySeconds: 60
     timeoutSeconds: 5
   readinessProbe:
-    httpGet:
-      path: /
-      port: 8080
+    tcpSocket:
+      port: http
     initialDelaySeconds: 0
     timeoutSeconds: 5
   ## Dashboard containers' resource requests and limits
@@ -512,7 +510,7 @@ dashboard:
   ## e.g:
   ##  customComponents: "js/custom_components.js"
   ## Ref: https://github.com/kubeapps/kubeapps/blob/master/docs/developer/custom-form-component-support.md
-  customComponents: ""
+  customComponents: "custom_components.js"
   ## Custom translations injected to the Dashboard to customize the strings used in Kubeapps
   ## Ref: https://github.com/kubeapps/kubeapps/blob/master/docs/developer/translate-kubeapps.md
   ## e.g:

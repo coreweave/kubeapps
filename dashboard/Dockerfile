@@ -1,11 +1,11 @@
 FROM bitnami/node:12.20.0 AS build
 WORKDIR /app
 
-COPY package.json yarn.lock /app/
+COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile
 
-RUN mkdir /app/src
-COPY . /app
+COPY src ./src
+COPY . ./
 RUN yarn run prettier-check && yarn run ts-compile-check
 RUN yarn run build
 

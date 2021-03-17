@@ -4,11 +4,14 @@
   "private": true,
   "homepage": "./",
   "dependencies": {
+    "@babel/core": "7.12.3",
     "@cds/city": "^1.1.0",
     "@cds/core": "^5.0.3",
     "@cds/react": "^5.0.3",
     "@clr/ui": "^5.0.3",
     "@paciolan/remote-component": "^2.11.0",
+    "@pmmmwh/react-refresh-webpack-plugin": "0.4.3",
+    "@svgr/webpack": "5.5.0",
     "@types/diff": "^5.0.0",
     "@types/js-yaml": "^4.0.0",
     "@types/json-schema": "^7.0.7",
@@ -26,31 +29,73 @@
     "@types/react-transition-group": "^4.4.1",
     "@types/semver": "^7.3.4",
     "@types/ws": "^7.4.0",
+    "@typescript-eslint/eslint-plugin": "^4.5.0",
+    "@typescript-eslint/parser": "^4.5.0",
     "ajv": "^6.10.2",
     "axios": "^0.21.1",
+    "babel-eslint": "^10.1.0",
+    "babel-jest": "^26.6.0",
+    "babel-loader": "8.1.0",
+    "babel-plugin-named-asset-import": "^0.3.7",
+    "babel-preset-react-app": "^10.0.0",
+    "bfj": "^7.0.2",
+    "camelcase": "^6.1.0",
+    "case-sensitive-paths-webpack-plugin": "2.3.0",
     "connected-react-router": "^6.9.1",
+    "css-loader": "4.3.0",
     "diff": "^5.0.0",
     "diff2html": "^3.3.0",
+    "dotenv": "8.2.0",
+    "dotenv-expand": "5.1.0",
     "enzyme-adapter-react-16": "^1.1.1",
+    "eslint": "^7.11.0",
+    "eslint-config-react-app": "^6.0.0",
+    "eslint-plugin-flowtype": "^5.2.0",
+    "eslint-plugin-import": "^2.22.1",
+    "eslint-plugin-jest": "^24.1.0",
+    "eslint-plugin-jsx-a11y": "^6.3.1",
+    "eslint-plugin-react": "^7.21.5",
+    "eslint-plugin-react-hooks": "^4.2.0",
+    "eslint-plugin-testing-library": "^3.9.2",
+    "eslint-webpack-plugin": "^2.5.2",
     "fast-json-patch": "^3.0.0-1",
+    "file-loader": "6.1.1",
+    "fs-extra": "^9.0.1",
     "fstream": "^1.0.12",
     "history": "^4.7.2",
+    "html-webpack-plugin": "4.5.0",
+    "identity-obj-proxy": "3.0.0",
     "immutable": "^4.0.0-rc.12",
+    "jest": "26.6.0",
+    "jest-circus": "26.6.0",
+    "jest-resolve": "26.6.0",
+    "jest-watch-typeahead": "0.6.1",
     "js-yaml": "^4.0.0",
     "json-schema": "^0.3.0",
     "jsonwebtoken": "^8.5.1",
     "lodash": "^4.17.21",
     "lodash-es": "^4.17.21",
+    "mini-css-extract-plugin": "0.11.3",
     "moniker-native": "^0.1.6",
     "normalize.css": "^8.0.1",
+    "optimize-css-assets-webpack-plugin": "5.0.4",
+    "pnp-webpack-plugin": "1.6.4",
+    "postcss-flexbugs-fixes": "4.2.1",
+    "postcss-loader": "3.0.0",
+    "postcss-normalize": "8.0.1",
+    "postcss-preset-env": "6.7.0",
+    "postcss-safe-parser": "5.0.2",
+    "prompts": "2.4.0",
     "prop-types": "15.7.2",
     "protobufjs": "^6.8.4",
     "qs": "^6.9.5",
     "raf": "^3.4.0",
     "react": "^16.13.0",
     "react-ace": "^9.3.0",
+    "react-app-polyfill": "^2.0.0",
     "react-compound-slider": "^3.3.1",
     "react-copy-to-clipboard": "^5.0.3",
+    "react-dev-utils": "^11.0.3",
     "react-dom": "^16.13.0",
     "react-helmet": "^6.1.0",
     "react-intl": "^5.13.2",
@@ -58,6 +103,7 @@
     "react-markdown": "^5.0.0",
     "react-minimal-pie-chart": "^8.1.0",
     "react-redux": "^7.1.9",
+    "react-refresh": "^0.8.3",
     "react-router": "^5.2.0",
     "react-router-dom": "^5.2.0",
     "react-router-hash-link": "^2.4.0",
@@ -70,41 +116,48 @@
     "redux-devtools-extension": "^2.13.5",
     "redux-thunk": "^2.2.0",
     "remark-gfm": "^1.0.0",
+    "resolve": "1.18.1",
+    "resolve-url-loader": "^3.1.2",
+    "sass-loader": "^10.0.5",
     "seamless-immutable": "^7.1.4",
-    "semver": "^7.3.4",
+    "semver": "7.3.2",
+    "style-loader": "1.3.0",
     "swagger-ui-react": "^3.44.1",
+    "terser-webpack-plugin": "4.2.3",
+    "ts-pnp": "1.2.0",
     "typesafe-actions": "^5.1.0",
+    "url-loader": "4.1.1",
+    "webpack": "4.44.2",
+    "webpack-dev-server": "3.11.1",
+    "webpack-manifest-plugin": "2.2.0",
+    "workbox-webpack-plugin": "5.1.4",
     "yaml": "1.10.0"
   },
   "scripts": {
-    "build-css": "sass src/ --no-source-map && yarn run copy-clr",
-    "watch-css": "yarn run build-css && yarn run compile-lang && sass src/ --watch --no-source-map",
-    "start-js": "BROWSER=none react-scripts start",
-    "build-js": "react-scripts build",
-    "start": "npm-run-all -p watch-css compile-lang start-js",
     "build": "npm-run-all build-css compile-lang build-js",
-    "test": "yarn run build-css && yarn run compile-lang && react-scripts test",
-    "eject": "react-scripts eject",
+    "build-css": "sass src/ --no-source-map && yarn run copy-clr",
+    "build-js": "node scripts/build.js",
+    "compile-lang": "formatjs compile-folder lang src/locales/ --ast --format simple",
     "copy-clr": "shx cp ./node_modules/@clr/ui/clr-ui-dark.min.css public/clr-ui-dark.min.css && cp node_modules/@clr/ui/clr-ui.min.css public/clr-ui.min.css",
-    "tslint-check": "tslint-config-prettier-check ./tslint.ci.json",
-    "prettier": "prettier --write 'src/**/*.{ts,tsx,scss}'",
-    "prettier-check": "prettier --check 'src/**/*.{ts,tsx,scss}'",
-    "lint-js": "tslint -c ./tslint.ci.json 'src/**/*.{ts,tsx}'",
-    "lint-js-fix": "tslint -c ./tslint.ci.json --fix 'src/**/*.{ts,tsx}'",
-    "lint-css": "stylelint --config ./.stylelintrc.json 'src/**/*.scss'",
-    "lint-css-fix": "stylelint --config ./.stylelintrc.json --fix 'src/**/*.scss'",
     "eslint": "eslint '**/*.{ts,tsx}' --ignore-pattern '**/*.d.ts' --max-warnings=0",
     "eslint-fix": "eslint '**/*.{ts,tsx}' --ignore-pattern '**/*.d.ts' --fix --max-warnings=0",
-    "lint": "npm-run-all lint-js lint-css eslint",
-    "ts-compile-check": "yarn run compile-lang && tsc -p tsconfig.json --noEmit",
     "extract-lang": "formatjs extract 'src/**/*.ts*' --out-file lang/en.json --id-interpolation-pattern '[sha512:contenthash:base64:6]' --format simple",
-    "compile-lang": "formatjs compile-folder lang src/locales/ --ast --format simple"
+    "lint": "npm-run-all lint-js lint-css eslint",
+    "lint-css": "stylelint --config ./.stylelintrc.json 'src/**/*.scss'",
+    "lint-css-fix": "stylelint --config ./.stylelintrc.json --fix 'src/**/*.scss'",
+    "lint-js": "tslint -c ./tslint.ci.json 'src/**/*.{ts,tsx}'",
+    "lint-js-fix": "tslint -c ./tslint.ci.json --fix 'src/**/*.{ts,tsx}'",
+    "prettier": "prettier --write 'src/**/*.{ts,tsx,scss}'",
+    "prettier-check": "prettier --check 'src/**/*.{ts,tsx,scss}'",
+    "start": "npm-run-all -p watch-css compile-lang start-js",
+    "start-js": "PORT=8080 BROWSER=none node scripts/start.js",
+    "test": "yarn run build-css && yarn run compile-lang && node scripts/test.js",
+    "ts-compile-check": "yarn run compile-lang && tsc -p tsconfig.json --noEmit",
+    "tslint-check": "tslint-config-prettier-check ./tslint.ci.json",
+    "watch-css": "yarn run build-css && yarn run compile-lang && sass src/ --watch --no-source-map"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
-      "yarn run lint-js-fix",
-      "yarn run eslint-fix",
-      "prettier --write",
       "git add"
     ],
     "*.scss": [
@@ -139,7 +192,6 @@
     "moxios": "^0.4.0",
     "npm-run-all": "^4.1.3",
     "prettier": "^2.2.1",
-    "react-scripts": "^4.0.3",
     "redux-mock-store": "^1.5.3",
     "sass": "^1.32.8",
     "shx": "^0.3.3",
@@ -154,14 +206,57 @@
     "typescript": "^4.1.0"
   },
   "jest": {
-    "resetMocks": false,
+    "roots": [
+      "<rootDir>/src"
+    ],
     "collectCoverageFrom": [
       "src/**/*",
       "!src/**/*.d.ts"
     ],
+    "setupFiles": [
+      "react-app-polyfill/jsdom"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/src/setupTests.ts"
+    ],
+    "testMatch": [
+      "<rootDir>/src/**/__tests__/**/*.{js,jsx,ts,tsx}",
+      "<rootDir>/src/**/*.{spec,test}.{js,jsx,ts,tsx}"
+    ],
+    "testEnvironment": "jsdom",
+    "testRunner": "/Users/mattysoup/go/src/github.com/kubeapps/kubeapps/dashboard/node_modules/jest-circus/runner.js",
+    "transform": {
+      "^.+\\.(js|jsx|mjs|cjs|ts|tsx)$": "<rootDir>/config/jest/babelTransform.js",
+      "^.+\\.css$": "<rootDir>/config/jest/cssTransform.js",
+      "^(?!.*\\.(js|jsx|mjs|cjs|ts|tsx|css|json)$)": "<rootDir>/config/jest/fileTransform.js"
+    },
     "transformIgnorePatterns": [
       "node_modules/(?!@clr|@cds|lit-element|lit-html|ramda|lodash-es|.*css)"
-    ]
+    ],
+    "modulePaths": [
+      "/Users/mattysoup/go/src/github.com/kubeapps/kubeapps/dashboard/src"
+    ],
+    "moduleNameMapper": {
+      "^react-native$": "react-native-web",
+      "^.+\\.module\\.(css|sass|scss)$": "identity-obj-proxy"
+    },
+    "moduleFileExtensions": [
+      "web.js",
+      "js",
+      "web.ts",
+      "ts",
+      "web.tsx",
+      "tsx",
+      "json",
+      "web.jsx",
+      "jsx",
+      "node"
+    ],
+    "watchPlugins": [
+      "jest-watch-typeahead/filename",
+      "jest-watch-typeahead/testname"
+    ],
+    "resetMocks": false
   },
   "eslintConfig": {
     "extends": "react-app",
@@ -190,6 +285,11 @@
       "last 1 chrome version",
       "last 1 firefox version",
       "last 1 safari version"
+    ]
+  },
+  "babel": {
+    "presets": [
+      "react-app"
     ]
   }
 }

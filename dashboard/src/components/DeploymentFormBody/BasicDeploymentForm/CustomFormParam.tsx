@@ -14,7 +14,7 @@ export default function CustomFormComponentLoader({
   handleBasicFormParamChange,
 }: ICustomParamProps) {
   // Fetches the custom-component bundle served by the dashboard nginx
-  const url = `${window.location.origin}/custom_components.js`;
+  const url = `http://localhost:9090/dist/main.js`;
 
   return useMemo(
     () => (

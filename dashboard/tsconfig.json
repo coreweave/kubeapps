@@ -35,5 +35,5 @@
     "webpack",
     "jest"
   ],
-  "include": ["src"]
+  "include": ["src", "public/cutom_components.js"]
 }
