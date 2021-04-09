@@ -256,7 +256,7 @@ describe("deploy chart", () => {
     expect(store.getActions()).toEqual(expectedActions);
   });
 
-  it("returns false and dispatches UnprocessableEntity if the given values don't satisfy the schema ", async () => {
+  it("returns false and dispatches UnprocessableEntity if the given values don't satisfy the schema", async () => {
     const res = await store.dispatch(
       actions.apps.deployChart(
         "target-cluster",
@@ -276,7 +276,7 @@ describe("deploy chart", () => {
       {
         type: getType(actions.apps.errorApp),
         payload: new UnprocessableEntity(
-          "The given values don't match the required format. The following errors were found:\n  - .foo: should be string",
+          "The given values don't match the required format. The following errors were found:\n  - /foo: must be string",
         ),
       },
     ];
@@ -330,7 +330,7 @@ describe("upgradeApp", () => {
     expect(store.getActions()).toEqual(expectedActions);
   });
 
-  it("returns false and dispatches UnprocessableEntity if the given values don't satisfy the schema ", async () => {
+  it("returns false and dispatches UnprocessableEntity if the given values don't satisfy the schema", async () => {
     const res = await store.dispatch(
       actions.apps.upgradeApp(
         "default-c",
@@ -351,7 +351,7 @@ describe("upgradeApp", () => {
       {
         type: getType(actions.apps.errorApp),
         payload: new UnprocessableEntity(
-          "The given values don't match the required format. The following errors were found:\n  - .foo: should be string",
+          "The given values don't match the required format. The following errors were found:\n  - /foo: must be string",
         ),
       },
     ];

@@ -1,7 +1,6 @@
 import { CdsButton } from "@cds/react/button";
 import actions from "actions";
 import Alert from "components/js/Alert";
-import * as React from "react";
 import { act } from "react-dom/test-utils";
 import * as ReactRedux from "react-redux";
 import { defaultStore, getStore, mountWrapper } from "shared/specs/mountWrapper";
@@ -20,7 +19,7 @@ const kubeaActions = { ...actions.kube };
 beforeEach(() => {
   actions.repos = {
     ...actions.repos,
-    validateRepo: jest.fn(),
+    validateRepo: jest.fn().mockReturnValue(true),
   };
   const mockDispatch = jest.fn(r => r);
   spyOnUseDispatch = jest.spyOn(ReactRedux, "useDispatch").mockReturnValue(mockDispatch);
@@ -133,9 +132,11 @@ it("should call the install method with OCI information", async () => {
     "",
     "",
     "",
+    "",
     [],
     ["apache", "jenkins"],
     false,
+    undefined,
   );
 });
 
@@ -154,15 +155,132 @@ it("should call the install skipping TLS verification", async () => {
     await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
   });
   wrapper.update();
-  expect(install).toHaveBeenCalledWith("", "https://helm.repo", "helm", "", "", "", [], [], true);
+  expect(install).toHaveBeenCalledWith(
+    "",
+    "https://helm.repo",
+    "helm",
+    "",
+    "",
+    "",
+    "",
+    [],
+    [],
+    true,
+    undefined,
+  );
 });
 
-it("should not show the docker registry credentials section if the namespace is the global one", () => {
+describe("when using a filter", () => {
+  it("should call the install method with a filter", async () => {
+    const install = jest.fn().mockReturnValue(true);
+    const wrapper = mountWrapper(
+      defaultStore,
+      <AppRepoForm {...defaultProps} onSubmit={install} />,
+    );
+    wrapper
+      .find("#kubeapps-repo-url")
+      .simulate("change", { target: { value: "https://helm.repo" } });
+    wrapper
+      .find("textarea")
+      .at(0)
+      .simulate("change", { target: { value: "nginx, wordpress" } });
+    const form = wrapper.find("form");
+    await act(async () => {
+      await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
+    });
+    wrapper.update();
+    expect(install).toHaveBeenCalledWith(
+      "",
+      "https://helm.repo",
+      "helm",
+      "",
+      "",
+      "",
+      "",
+      [],
+      [],
+      false,
+      { jq: ".name == $var0 or .name == $var1", variables: { $var0: "nginx", $var1: "wordpress" } },
+    );
+  });
+
+  it("should call the install method with a filter excluding a regex", async () => {
+    const install = jest.fn().mockReturnValue(true);
+    const wrapper = mountWrapper(
+      defaultStore,
+      <AppRepoForm {...defaultProps} onSubmit={install} />,
+    );
+    wrapper
+      .find("#kubeapps-repo-url")
+      .simulate("change", { target: { value: "https://helm.repo" } });
+    wrapper
+      .find("textarea")
+      .at(0)
+      .simulate("change", { target: { value: "nginx" } });
+    wrapper.find('input[type="checkbox"]').at(0).simulate("change");
+    wrapper.find('input[type="checkbox"]').at(1).simulate("change");
+    const form = wrapper.find("form");
+    await act(async () => {
+      await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
+    });
+    wrapper.update();
+    expect(install).toHaveBeenCalledWith(
+      "",
+      "https://helm.repo",
+      "helm",
+      "",
+      "",
+      "",
+      "",
+      [],
+      [],
+      false,
+      { jq: ".name | test($var) | not", variables: { $var: "nginx" } },
+    );
+  });
+
+  it("ignore the filter for the OCI case", async () => {
+    const install = jest.fn().mockReturnValue(true);
+    const wrapper = mountWrapper(
+      defaultStore,
+      <AppRepoForm {...defaultProps} onSubmit={install} />,
+    );
+    wrapper
+      .find("#kubeapps-repo-url")
+      .simulate("change", { target: { value: "https://oci.repo" } });
+    wrapper
+      .find("textarea")
+      .at(0)
+      .simulate("change", { target: { value: "nginx, wordpress" } });
+    wrapper.find("#kubeapps-repo-type-oci").simulate("change");
+    const form = wrapper.find("form");
+    await act(async () => {
+      await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
+    });
+    wrapper.update();
+    expect(install).toHaveBeenCalledWith(
+      "",
+      "https://oci.repo",
+      "oci",
+      "",
+      "",
+      "",
+      "",
+      [],
+      [],
+      false,
+      undefined,
+    );
+  });
+});
+
+it("should disable the docker registry credentials section if the namespace is the global one", () => {
   const wrapper = mountWrapper(
     defaultStore,
     <AppRepoForm {...defaultProps} kubeappsNamespace={defaultProps.namespace} />,
   );
-  expect(wrapper.html()).not.toContain("Associate Docker Registry Credentials");
+  expect(wrapper.find("select")).toBeDisabled();
+  expect(wrapper.find(".docker-creds-subform-button button")).toBeDisabled();
 });
 
 it("should render the docker registry credentials section", () => {
@@ -190,9 +308,60 @@ it("should call the install method with the selected docker credentials", async 
     <AppRepoForm {...defaultProps} onSubmit={install} />,
   );
 
-  const label = wrapper.find("#app-repo-secret-repo-1");
+  const label = wrapper.find("select");
   act(() => {
-    label.simulate("change");
+    label.simulate("change", { target: { value: "repo-1" } });
+  });
+  const radio = wrapper.find("#kubeapps-repo-auth-method-registry");
+  act(() => {
+    radio.simulate("change", { target: { value: "registry" } });
+  });
+  wrapper.find("#kubeapps-repo-url").simulate("change", { target: { value: "http://test" } });
+  wrapper.update();
+
+  await act(async () => {
+    await (wrapper.find("form").prop("onSubmit") as (e: any) => Promise<any>)({
+      preventDefault: jest.fn(),
+    });
+  });
+  expect(install).toHaveBeenCalledWith(
+    "",
+    "http://test",
+    "helm",
+    "",
+    "repo-1",
+    "",
+    "",
+    ["repo-1"],
+    [],
+    false,
+    undefined,
+  );
+});
+
+it("should call the install reusing as auth the selected docker credentials", async () => {
+  const validateRepo = jest.fn().mockReturnValue(true);
+  const install = jest.fn().mockReturnValue(true);
+  actions.repos = {
+    ...actions.repos,
+    validateRepo,
+  };
+  const secret = {
+    metadata: {
+      name: "repo-1",
+    },
+  } as ISecret;
+
+  const wrapper = mountWrapper(
+    getStore({
+      repos: { imagePullSecrets: [secret] },
+    }),
+    <AppRepoForm {...defaultProps} onSubmit={install} />,
+  );
+
+  const label = wrapper.find("select");
+  act(() => {
+    label.simulate("change", { target: { value: "repo-1" } });
   });
   wrapper.find("#kubeapps-repo-url").simulate("change", { target: { value: "http://test" } });
   wrapper.update();
@@ -209,18 +378,17 @@ it("should call the install method with the selected docker credentials", async 
     "",
     "",
     "",
+    "",
     ["repo-1"],
     [],
     false,
+    undefined,
   );
 });
 
 it("should not show the list of OCI repositories if using a Helm repo (default)", () => {
   const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} />);
-  const section = wrapper
-    .find(".clr-control-container")
-    .filterWhere(c => c.text().includes("List of Repositories"));
-  expect(section.prop("hidden")).toBeTruthy();
+  expect(wrapper.find("#kubeapps-oci-repositories")).not.toExist();
 });
 
 describe("when the repository info is already populated", () => {
@@ -280,6 +448,7 @@ describe("when the repository info is already populated", () => {
       const repo = { metadata: { name: "foo" }, spec: { type: "oci" } } as any;
       const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} repo={repo} />);
       expect(wrapper.find("#kubeapps-repo-type-oci")).toBeChecked();
+      expect(wrapper.find("#kubeapps-oci-repositories")).toExist();
     });
 
     it("should parse the existing skip tls config", () => {
@@ -298,6 +467,16 @@ describe("when the repository info is already populated", () => {
       expect(wrapper.find("#kubeapps-repo-token").prop("value")).toBe("foo");
     });
 
+    it("should select a docker secret as auth mechanism", () => {
+      const repo = { metadata: { name: "foo" } } as any;
+      const secret = { data: { ".dockerconfigjson": "QmVhcmVyIGZvbw==" } } as any;
+      const wrapper = mountWrapper(
+        defaultStore,
+        <AppRepoForm {...defaultProps} repo={repo} secret={secret} />,
+      );
+      expect(wrapper.find("#kubeapps-repo-auth-method-registry")).toBeChecked();
+    });
+
     it("should pre-select the existing docker registry secret", () => {
       const secret = {
         metadata: {
@@ -311,7 +490,39 @@ describe("when the repository info is already populated", () => {
         }),
         <AppRepoForm {...defaultProps} repo={repo} />,
       );
-      expect(wrapper.find("#app-repo-secret-foo").prop("checked")).toBe(true);
+      expect(wrapper.find("select").prop("value")).toBe("foo");
+    });
+
+    it("should parse the existing filter (simple)", () => {
+      const repo = {
+        metadata: { name: "foo" },
+        spec: {
+          type: "helm",
+          filterRule: {
+            jq: ".name == $var0 or .name == $var1",
+            variables: { $var0: "nginx", $var1: "wordpress" },
+          },
+        },
+      } as any;
+      const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} repo={repo} />);
+      expect(wrapper.find("textarea").at(0).prop("value")).toBe("nginx, wordpress");
+
+      expect(wrapper.find('input[type="checkbox"]').at(0)).not.toBeChecked();
+      expect(wrapper.find('input[type="checkbox"]').at(1)).not.toBeChecked();
+    });
+    it("should parse the existing filter (negated regex)", () => {
+      const repo = {
+        metadata: { name: "foo" },
+        spec: {
+          type: "helm",
+          filterRule: { jq: ".name | test($var) | not", variables: { $var: "nginx" } },
+        },
+      } as any;
+      const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} repo={repo} />);
+      expect(wrapper.find("textarea").at(0).prop("value")).toBe("nginx");
+
+      expect(wrapper.find('input[type="checkbox"]').at(0)).toBeChecked();
+      expect(wrapper.find('input[type="checkbox"]').at(1)).toBeChecked();
     });
   });
 });

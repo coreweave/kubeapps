@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CdsButton } from "@cds/react/button";
 import actions from "actions";
@@ -86,7 +86,7 @@ export default function OperatorNew({ namespace, operatorName, cluster }: IOpera
     );
   }
   if (isFetching || !operator) {
-    return <LoadingWrapper />;
+    return <LoadingWrapper className="margin-t-xxl" loadingText={`Fetching ${operatorName}...`} />;
   }
   if (!updateChannel) {
     return (
@@ -137,6 +137,7 @@ export default function OperatorNew({ namespace, operatorName, cluster }: IOpera
     }
   };
 
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <section>
       <OperatorHeader

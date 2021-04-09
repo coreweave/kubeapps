@@ -5,12 +5,15 @@ This is an extension to the [basic form support](https://github.com/kubeapps/kub
 - Custom UI component that are not yet supported by the basic components (e.g: radio selectors)
 - Consuming third party APIs for component values and validation
 
-## Adding a bundle
-The js bundles are loaded as a configMap and its value can be set in the `values.yaml` file. By setting the path to the bundle in the `values.yaml` we are able to leverage the [Helm .Files object](https://helm.sh/docs/chart_template_guide/accessing_files/#glob-patterns) to load the bundle into the configMap. For example:
-```
-  customComponents: "js/custom_components.js"
-```
-In this example Helm will look in the `js` directory relative to the `values.yaml` 
+## Step-by-step integration process
+1. First you will need a react component to render instead of the default Kubeapps form components. You're React components must be compiled into a JS file so that they can be interpreted by the browser since they cannot natively parse `.jsx` or `.tsx` files. You can compile `jsx` or `tsx` into js with tools like webpack, create-react-app, babel, etc. If you just want to try this feature out and you don't have a component yet we provide some test files you can try (Do not try to load the `jsx` file since browsers cannot parse it! We simply include it so that you can see the pre-compiled version of the `.js` files).
+2. The easiest way to add inject the file in is via the command line. You can do it via the following command:
+    ```
+    helm install  bitnami/kubeapps --set-file dashboard.customComponents=*path to file* <other_flags>
+    ```
+    Note: The file can be located anywhere on your file system or even a remote source!
+
+3. Once the deployment is complete you will need a values json that will signal to Kubeapps that we want to render a custom component and not one fo the provided ones. To do that you will need a `values.json.schema` that has a `customComponent` key, more info [here](https://github.com/kubeapps/kubeapps/blob/master/docs/developer/custom-form-component-support.md#render-a-custom-component).
 
 ## Render a custom component
 Signaling to the Kubeapps dashboard that you want to render a custom component is pretty straight forward.  Simply add a `customComponent` field to any form parameter defined in the  `values.json.schema` and that will tell the react application to fetch the component from the custom js bundle. An example parameter could look like:
@@ -29,7 +32,7 @@ Signaling to the Kubeapps dashboard that you want to render a custom component i
 ```
 Note: The `customComponent` field **MUST BE AN OBJECT**. This design decision was made so that developers can pass extra values/properties into their custom components should they require them.
 
-## Updating values with custom components
+## Updating Helm values with custom components
 Custom form components would be useless without the ability to interact with the YAML state. To do this your custom components should be set up to receive 2 props: `handleBasicFormParamChange` and `param`. `param` is the current json object this is being rendered (denoted by the `customComponent` field) and `handleBasicFormParamChange` which is a function that updates the YAML file. An example of how you use this function can be found in any of the BasicDeploymentForm components such as the [SliderParam](https://github.com/kubeapps/kubeapps/blob/master/dashboard/src/components/DeploymentFormBody/BasicDeploymentForm/SliderParam.tsx#L47-L53).
 ```
   const handleParamChange = (newValue: number) => {
@@ -42,4 +45,4 @@ Custom form components would be useless without the ability to interact with the
 ```
 
 ## Tips
-To try this feature out we offer a pre-minified, bundled react component that you can try out! Note: It does not do much, its a simple button that will set the value of whatever param you render the custom component into as `test`. But it will help you understand how to integrate custom components. That file can be found [here](https://github.com/kubeapps/kubeapps/blob/master/docs/developer/fixtures/custom_components.js). The bundled custom component was created using [remote-component-starter](https://github.com/Paciolan/remote-component-starter), which is specifically made to help build components that you want to load remotely with the [remote-component](https://github.com/Paciolan/remote-component) tool used by Kubeapps.
+To help you get started we provide some examples that you can try [here](https://github.com/kubeapps/kubeapps/blob/master/docs/developer/examples). The three files should give you a good idea about how to start developing and building your own custom components. `CustomComponent.jsx` is a super simple react component that takes the `handleBasicFormParamChange` and `param` props and renders a button that changes the value to 'test'. `CustomComponent.js` is the JavaScript variant of `CustomComponent.jsx` and `CustomComponent.min.js` is a minified js bundle created using [remote-component-starter](https://github.com/Paciolan/remote-component-starter), which is specifically made to help build components that you want to load remotely with the [remote-component](https://github.com/Paciolan/remote-component) tool used by Kubeapps.

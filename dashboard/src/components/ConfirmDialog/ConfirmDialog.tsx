@@ -1,6 +1,5 @@
 import { CdsModal, CdsModalActions, CdsModalContent, CdsModalHeader } from "@cds/react/modal";
 import Alert from "components/js/Alert";
-import React from "react";
 import LoadingWrapper from "../LoadingWrapper/LoadingWrapper";
 import "./ConfirmDialog.css";
 
@@ -36,12 +35,11 @@ function ConfirmDialog({
           {headerText && <CdsModalHeader>{headerText}</CdsModalHeader>}
           {error && <Alert theme="danger">An error ocurred: {error.message}</Alert>}
           {loading === true ? (
-            <>
+            <div className="center">
               <CdsModalContent>
-                <span>Loading, please wait</span>
-                <LoadingWrapper loaded={false} />
+                <LoadingWrapper loadingText="Loading, please wait" loaded={false} />
               </CdsModalContent>
-            </>
+            </div>
           ) : (
             <>
               <CdsModalContent>

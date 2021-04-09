@@ -1,6 +1,6 @@
 import { RouterAction } from "connected-react-router";
 import * as Moniker from "moniker-native";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { JSONSchema4 } from "json-schema";
 import { CreateError, FetchError, IChartState, IChartVersion } from "../../shared/types";
@@ -124,7 +124,7 @@ function DeploymentForm({
   }
 
   if (!version) {
-    return <LoadingWrapper />;
+    return <LoadingWrapper className="margin-t-xxl" loadingText={`Fetching ${chartID}...`} />;
   }
   const chartAttrs = version.relationships.chart.data;
   return (

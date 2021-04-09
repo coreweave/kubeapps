@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CSSTransition } from "react-transition-group";
 
@@ -10,8 +10,14 @@ import useOutsideClick from "../js/hooks/useOutsideClick/useOutsideClick";
 import { IClustersState } from "../../reducers/cluster";
 import Row from "../js/Row";
 
-import { getThemeFile, SupportedThemes } from "components/HeadManager/HeadManager";
+import actions from "actions";
+import { getThemeFile } from "components/HeadManager/HeadManager";
 import { Helmet } from "react-helmet";
+import { useDispatch, useSelector } from "react-redux";
+import { Action } from "redux";
+import { ThunkDispatch } from "redux-thunk";
+import { SupportedThemes } from "shared/Config";
+import { IStoreState } from "shared/types";
 import { app } from "shared/url";
 import helmIcon from "../../icons/helm-white.svg";
 import operatorIcon from "../../icons/operator-framework-white.svg";
@@ -24,6 +30,7 @@ export interface IContextSelectorProps {
 }
 
 function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
+  const dispatch: ThunkDispatch<IStoreState, null, Action> = useDispatch();
   const [open, setOpen] = useState(false);
   const currentCluster = clusters.clusters[clusters.currentCluster];
   const namespaceSelected = currentCluster.currentNamespace;
@@ -31,22 +38,22 @@ function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
   const ref = useRef(null);
   useOutsideClick(setOpen, [ref], open);
 
-  const [theme, setTheme] = useState<string>(
-    localStorage.getItem("theme") || SupportedThemes.light,
-  );
+  const {
+    config: { theme },
+  } = useSelector((state: IStoreState) => state);
 
   const toggleOpen = () => setOpen(!open);
 
   const toggleTheme = () => {
     const newTheme = theme === SupportedThemes.dark ? SupportedThemes.light : SupportedThemes.dark;
-    localStorage.setItem("theme", newTheme);
-    setTheme(newTheme);
+    dispatch(actions.config.setTheme(newTheme));
   };
 
   useEffect(() => {
     document.body.setAttribute("cds-theme", theme);
   }, [theme]);
 
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <>
       <Helmet>
@@ -62,9 +69,7 @@ function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
           aria-expanded={open}
           aria-haspopup="menu"
         >
-          <Row>
-            <CdsIcon size="md" shape="applications" solid={true} inverse={true} />
-          </Row>
+          <Row>{<CdsIcon size="md" shape="applications" solid={true} />}</Row>
         </button>
         <CSSTransition in={open} timeout={200} classNames="transition-drawer">
           <div className="dropdown-menu dropdown-configuration-menu" role="menu" hidden={!open}>
@@ -95,8 +100,7 @@ function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
             </div>
             <div>
               <div className="dropdown-menu-subtext">
-                Made with <CdsIcon size="sm" shape="heart" inverse={true} solid={true} /> by Bitnami
-                and{" "}
+                Made with <CdsIcon size="sm" shape="heart" solid={true} /> by Bitnami and{" "}
                 <a
                   href="https://github.com/kubeapps/kubeapps/graphs/contributors"
                   className="type-color-white"
@@ -110,8 +114,7 @@ function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
                 {appVersion}
                 <br />
                 <Link to={"/docs"}>
-                  API documentation portal{" "}
-                  <CdsIcon size="sm" shape="network-globe" inverse={true} solid={true} />
+                  API documentation portal <CdsIcon size="sm" shape="network-globe" solid={true} />
                 </Link>
                 <CdsToggle className="dropdown-theme-toggle" control-align="right">
                   <label>
@@ -119,7 +122,6 @@ function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
                       <CdsIcon
                         size="sm"
                         shape={theme === SupportedThemes.dark ? "moon" : "sun"}
-                        inverse={true}
                         solid={true}
                       />
                     </span>

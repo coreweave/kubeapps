@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import cs from "classnames";
 import PropTypes from "prop-types";
 import { CdsIcon } from "@cds/react/icon";
@@ -43,6 +43,7 @@ const Tooltip = ({ children, position, icon, iconProps, id, label, extraSmall, s
 
   // the 'tooltip' role does have the inherited props 'aria-haspopup' and 'aria-expanded'
   /* eslint-disable jsx-a11y/role-supports-aria-props */
+  /* eslint-disable jsx-a11y/no-interactive-element-to-noninteractive-role */
   return (
     <button
       className={css}

@@ -1,8 +1,8 @@
 import { CdsButton } from "@cds/react/button";
 import { CdsIcon } from "@cds/react/icon";
-import { assignWith } from "lodash";
-import { get } from "lodash";
-import React, { useEffect, useState } from "react";
+import { assignWith, get } from "lodash";
+
+import { useEffect, useState } from "react";
 import YAML from "yaml";
 import placeholder from "../../placeholder.png";
 
@@ -152,14 +152,34 @@ export default function AppView() {
       return;
     }
 
+    if (Object.values(resourceRefs).some(ref => ref.length)) {
+      // Already populated, skip
+      return;
+    }
+
     let parsedManifest: IResource[] = YAML.parseAllDocuments(
       app.manifest,
     ).map((doc: YAML.Document) => doc.toJSON());
     // Filter out elements in the manifest that does not comply
     // with { kind: foo }
     parsedManifest = parsedManifest.filter(r => r && r.kind);
-    setResourceRefs(parseResources(parsedManifest, kinds, cluster, app.namespace));
-  }, [app, cluster, kinds]);
+    const parsedRefs = parseResources(parsedManifest, kinds, cluster, app.namespace);
+    if (Object.values(parsedRefs).some(ref => ref.length)) {
+      // Avoid setting refs if the manifest is empty
+      setResourceRefs(parsedRefs);
+    }
+  }, [app, cluster, kinds, resourceRefs]);
+
+  useEffect(() => {
+    Object.values(resourceRefs).forEach((refs: ResourceRef[]) => {
+      refs.forEach(ref => dispatch(actions.kube.getAndWatchResource(ref)));
+    });
+    return function cleanup() {
+      Object.values(resourceRefs).forEach((refs: ResourceRef[]) => {
+        refs.forEach(ref => dispatch(actions.kube.closeWatchResource(ref)));
+      });
+    };
+  }, [dispatch, resourceRefs]);
 
   if (error && error.constructor === FetchError) {
     return <Alert theme="danger">Application not found. Received: {error.message}</Alert>;
@@ -184,7 +204,7 @@ export default function AppView() {
         buttons={[
           <Link to={url.app.apps.upgrade(cluster, namespace, releaseName)} key="upgrade-button">
             <CdsButton status="primary">
-              <CdsIcon shape="upload-cloud" inverse={true} /> Upgrade
+              <CdsIcon shape="upload-cloud" /> Upgrade
             </CdsButton>
           </Link>,
           <RollbackButton
@@ -209,7 +229,7 @@ export default function AppView() {
           <Alert theme="danger">An error occurred: {error.message}</Alert>
         ))}
       {!app || !app.info ? (
-        <LoadingWrapper />
+        <LoadingWrapper loadingText={`Loading ${releaseName}...`} />
       ) : (
         <Row>
           <Column span={3}>

@@ -1,5 +1,5 @@
 import { get } from "lodash";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 
 import actions from "actions";
 import Table from "components/js/Table";
@@ -12,6 +12,7 @@ import { IK8sList, IKubeItem, IResource, IServiceSpec, IStoreState } from "../..
 import isSomeResourceLoading from "../helpers";
 import { GetURLItemFromIngress, IsURL } from "./AccessURLItem/AccessURLIngressHelper";
 import { GetURLItemFromService } from "./AccessURLItem/AccessURLServiceHelper";
+import "./AccessURLTable.css";
 
 interface IAccessURLTableProps {
   ingressRefs: ResourceRef[];
@@ -115,7 +116,7 @@ function getNotes(resource?: IResource) {
     return <span>IP(s): {ips.map(ip => ip.ip).join(", ")}</span>;
   }
   return (
-    <span>
+    <span className="tooltip-wrapper">
       Not associated with any IP.{" "}
       <Tooltip
         label="pending-tooltip"
@@ -150,7 +151,14 @@ export default function AccessURLTable({ ingressRefs, serviceRefs }: IAccessURLT
   ) as Array<IKubeItem<IResource>>;
 
   if (isSomeResourceLoading(ingresses.concat(services))) {
-    return <LoadingWrapper loaded={false} />;
+    return (
+      <section aria-labelledby="access-urls-title">
+        <h5 className="section-title" id="access-urls-title">
+          Access URLs
+        </h5>
+        <LoadingWrapper loaded={false} />
+      </section>
+    );
   }
   if (!hasItems(services, ingresses)) {
     return null;

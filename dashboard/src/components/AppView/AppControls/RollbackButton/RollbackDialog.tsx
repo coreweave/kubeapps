@@ -3,7 +3,7 @@ import { CdsControlMessage } from "@cds/react/forms";
 import { CdsModal, CdsModalActions, CdsModalContent, CdsModalHeader } from "@cds/react/modal";
 import { CdsSelect } from "@cds/react/select";
 import Alert from "components/js/Alert";
-import React, { useState } from "react";
+import { useState } from "react";
 import LoadingWrapper from "../../../LoadingWrapper/LoadingWrapper";
 import "./RollbackDialog.css";
 
@@ -38,6 +38,8 @@ function RollbackDialog({
   for (let i = currentRevision - 1; i > 0; i--) {
     options.push(i);
   }
+
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <>
       {modalIsOpen && (
@@ -45,8 +47,7 @@ function RollbackDialog({
           <CdsModalHeader>Rollback application</CdsModalHeader>
           <CdsModalContent>
             {error && <Alert theme="danger">An error occurred: {error.message}</Alert>}
-            {loading && <p>Loading, please wait.</p>}
-            <LoadingWrapper loaded={!loading}>
+            <LoadingWrapper className="center" loadingText="Loading, please wait" loaded={!loading}>
               {disableRollback ? (
                 <p>The application has not been upgraded, it's not possible to rollback.</p>
               ) : (

@@ -2,7 +2,6 @@ import Alert from "components/js/Alert";
 import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
 import CapabiliyLevel, { BASIC_INSTALL } from "components/OperatorView/OperatorCapabilityLevel";
 import { get } from "lodash";
-import React from "react";
 import { useSelector } from "react-redux";
 import { Operators } from "shared/Operators";
 import { IStoreState } from "shared/types";
@@ -11,7 +10,7 @@ import "./CapabilityLevel.css";
 export default function OperatorSummary() {
   const { operator, isFetching, csv } = useSelector((state: IStoreState) => state.operators);
   if (isFetching || (!operator && !csv)) {
-    return <LoadingWrapper />;
+    return <LoadingWrapper className="margin-t-xxl" loadingText="Fetching Operator info..." />;
   }
   let capabilityLevel = "";
   let repository = "";

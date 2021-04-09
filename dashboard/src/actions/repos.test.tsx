@@ -484,9 +484,11 @@ describe("installRepo", () => {
     "",
     "",
     "",
+    "",
     [],
     [],
     false,
+    undefined,
   );
 
   context("when authHeader provided", () => {
@@ -498,12 +500,14 @@ describe("installRepo", () => {
       "Bearer: abc",
       "",
       "",
+      "",
       [],
       [],
       false,
+      undefined,
     );
 
-    it("calls AppRepository create including a auth struct", async () => {
+    it("calls AppRepository create including a auth struct (authHeader)", async () => {
       await store.dispatch(installRepoCMDAuth);
       expect(AppRepository.create).toHaveBeenCalledWith(
         "default",
@@ -513,10 +517,12 @@ describe("installRepo", () => {
         "helm",
         "Bearer: abc",
         "",
+        "",
         {},
         [],
         [],
         false,
+        undefined,
       );
     });
 
@@ -530,9 +536,11 @@ describe("installRepo", () => {
           "",
           "",
           "",
+          "",
           [],
           ["apache", "jenkins"],
           false,
+          undefined,
         ),
       );
       expect(AppRepository.create).toHaveBeenCalledWith(
@@ -543,10 +551,12 @@ describe("installRepo", () => {
         "oci",
         "",
         "",
+        "",
         {},
         [],
         ["apache", "jenkins"],
         false,
+        undefined,
       );
     });
 
@@ -560,9 +570,11 @@ describe("installRepo", () => {
           "",
           "",
           "",
+          "",
           [],
           [],
           true,
+          undefined,
         ),
       );
       expect(AppRepository.create).toHaveBeenCalledWith(
@@ -573,10 +585,12 @@ describe("installRepo", () => {
         "oci",
         "",
         "",
+        "",
         {},
         [],
         [],
         true,
+        undefined,
       );
     });
 
@@ -593,14 +607,16 @@ describe("installRepo", () => {
       "http://foo.bar",
       "helm",
       "",
+      "",
       "This is a cert!",
       "",
       [],
       [],
       false,
+      undefined,
     );
 
-    it("calls AppRepository create including a auth struct", async () => {
+    it("calls AppRepository create including a auth struct (custom CA)", async () => {
       await store.dispatch(installRepoCMDAuth);
       expect(AppRepository.create).toHaveBeenCalledWith(
         "default",
@@ -609,15 +625,17 @@ describe("installRepo", () => {
         "http://foo.bar",
         "helm",
         "",
+        "",
         "This is a cert!",
         {},
         [],
         [],
         false,
+        undefined,
       );
     });
 
-    it("returns true", async () => {
+    it("returns true (installRepoCMDAuth)", async () => {
       const res = await store.dispatch(installRepoCMDAuth);
       expect(res).toBe(true);
     });
@@ -632,10 +650,12 @@ describe("installRepo", () => {
             "helm",
             "",
             "",
+            "",
             safeYAMLTemplate,
             [],
             [],
             false,
+            undefined,
           ),
         );
 
@@ -647,12 +667,14 @@ describe("installRepo", () => {
           "helm",
           "",
           "",
+          "",
           {
             spec: { containers: [{ env: [{ name: "FOO", value: "BAR" }] }] },
           },
           [],
           [],
           false,
+          undefined,
         );
       });
 
@@ -669,10 +691,12 @@ describe("installRepo", () => {
             "helm",
             "",
             "",
+            "",
             unsafeYAMLTemplate,
             [],
             [],
             false,
+            undefined,
           ),
         );
         expect(AppRepository.create).not.toHaveBeenCalled();
@@ -691,14 +715,16 @@ describe("installRepo", () => {
         "helm",
         "",
         "",
+        "",
         {},
         [],
         [],
         false,
+        undefined,
       );
     });
 
-    it("returns true", async () => {
+    it("returns true (installRepoCMD)", async () => {
       const res = await store.dispatch(installRepoCMD);
       expect(res).toBe(true);
     });
@@ -757,9 +783,11 @@ describe("installRepo", () => {
         "",
         "",
         "",
+        "",
         ["repo-1"],
         [],
         false,
+        undefined,
       ),
     );
 
@@ -771,10 +799,12 @@ describe("installRepo", () => {
       "helm",
       "",
       "",
+      "",
       {},
       ["repo-1"],
       [],
       false,
+      undefined,
     );
   });
 });
@@ -811,11 +841,13 @@ describe("updateRepo", () => {
         "http://foo.bar",
         "helm",
         "foo",
+        "",
         "bar",
         safeYAMLTemplate,
         ["repo-1"],
         [],
         false,
+        undefined,
       ),
     );
     expect(store.getActions()).toEqual(expectedActions);
@@ -826,11 +858,13 @@ describe("updateRepo", () => {
       "http://foo.bar",
       "helm",
       "foo",
+      "",
       "bar",
       { spec: { containers: [{ env: [{ name: "FOO", value: "BAR" }] }] } },
       ["repo-1"],
       [],
       false,
+      undefined,
     );
   });
 
@@ -865,11 +899,13 @@ describe("updateRepo", () => {
         "http://foo.bar",
         "helm",
         "foo",
+        "",
         "bar",
         safeYAMLTemplate,
         ["repo-1"],
         [],
         false,
+        undefined,
       ),
     );
     expect(store.getActions()).toEqual(expectedActions);
@@ -880,11 +916,13 @@ describe("updateRepo", () => {
       "http://foo.bar",
       "helm",
       "foo",
+      "",
       "bar",
       { spec: { containers: [{ env: [{ name: "FOO", value: "BAR" }] }] } },
       ["repo-1"],
       [],
       false,
+      undefined,
     );
   });
 
@@ -909,11 +947,13 @@ describe("updateRepo", () => {
         "http://foo.bar",
         "helm",
         "foo",
+        "",
         "bar",
         safeYAMLTemplate,
         [],
         [],
         false,
+        undefined,
       ),
     );
     expect(store.getActions()).toEqual(expectedActions);
@@ -932,9 +972,11 @@ describe("updateRepo", () => {
         "",
         "",
         "",
+        "",
         [],
         ["apache", "jenkins"],
         false,
+        undefined,
       ),
     );
     expect(AppRepository.update).toHaveBeenCalledWith(
@@ -945,10 +987,12 @@ describe("updateRepo", () => {
       "oci",
       "",
       "",
+      "",
       {},
       [],
       ["apache", "jenkins"],
       false,
+      undefined,
     );
   });
 });
@@ -1021,7 +1065,7 @@ describe("validateRepo", () => {
     ];
 
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "helm", "auth", "cert", [], false),
+      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false),
     );
     expect(store.getActions()).toEqual(expectedActions);
     expect(res).toBe(true);
@@ -1042,7 +1086,7 @@ describe("validateRepo", () => {
       },
     ];
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "helm", "auth", "cert", [], false),
+      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false),
     );
     expect(store.getActions()).toEqual(expectedActions);
     expect(res).toBe(false);
@@ -1066,7 +1110,7 @@ describe("validateRepo", () => {
       },
     ];
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "helm", "auth", "cert", [], false),
+      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false),
     );
     expect(store.getActions()).toEqual(expectedActions);
     expect(res).toBe(false);
@@ -1077,13 +1121,14 @@ describe("validateRepo", () => {
       code: 200,
     });
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "oci", "", "", ["apache", "jenkins"], false),
+      repoActions.validateRepo("url", "oci", "", "", "", ["apache", "jenkins"], false),
     );
     expect(res).toBe(true);
     expect(AppRepository.validate).toHaveBeenCalledWith(
       "default",
       "url",
       "oci",
+      "",
       "",
       "",
       ["apache", "jenkins"],

@@ -1,6 +1,5 @@
 import { CdsIcon } from "@cds/react/icon";
 import { Location } from "history";
-import * as React from "react";
 import { useEffect, useState } from "react";
 import { useIntl } from "react-intl";
 import { Redirect } from "react-router";
@@ -37,7 +36,13 @@ function LoginForm(props: ILoginFormProps) {
   }, [oauthLoginURI, checkCookieAuthentication, props.cluster]);
 
   if (props.authenticating || !cookieChecked) {
-    return <LoadingWrapper loaded={false} />;
+    return (
+      <LoadingWrapper
+        className="margin-t-xxl"
+        loadingText={<h2>Welcome To Kubeapps</h2>}
+        loaded={false}
+      />
+    );
   }
   if (props.authenticated) {
     const { from } = (props.location.state as any) || { from: { pathname: "/" } };

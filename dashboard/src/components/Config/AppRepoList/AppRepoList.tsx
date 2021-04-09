@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { CdsToggle, CdsToggleGroup } from "@cds/react/toggle";
 import actions from "actions";
@@ -7,7 +7,7 @@ import Alert from "components/js/Alert";
 import Table from "components/js/Table";
 import PageHeader from "components/PageHeader/PageHeader";
 import { push } from "connected-react-router";
-import * as qs from "qs";
+import qs from "qs";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation } from "react-router";
 import { Link } from "react-router-dom";
@@ -148,6 +148,8 @@ function AppRepoList() {
       };
     });
   };
+
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <>
       <PageHeader
@@ -203,7 +205,11 @@ function AppRepoList() {
           )}
           {!errors.fetch && (
             <>
-              <LoadingWrapper loaded={!isFetching}>
+              <LoadingWrapper
+                className="margin-t-xxl"
+                loadingText="Fetching Application Repositories..."
+                loaded={!isFetching}
+              >
                 <h3>Global Repositories:</h3>
                 <p>Global repositories are available for all Kubeapps users.</p>
                 {globalRepos.length ? (

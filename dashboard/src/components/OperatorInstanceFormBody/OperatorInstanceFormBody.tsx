@@ -4,7 +4,7 @@ import DifferentialTab from "components/DeploymentFormBody/DifferentialTab";
 import Alert from "components/js/Alert";
 import Tabs from "components/Tabs";
 import * as yaml from "js-yaml";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { IResource } from "../../shared/types";
 import ConfirmDialog from "../ConfirmDialog/ConfirmDialog";
 import AdvancedDeploymentForm from "../DeploymentFormBody/AdvancedDeploymentForm";
@@ -73,7 +73,13 @@ function DeploymentFormBody({
   };
 
   if (isFetching) {
-    return <LoadingWrapper loaded={false} />;
+    return (
+      <LoadingWrapper
+        className="margin-t-xxl"
+        loadingText="Fetching application..."
+        loaded={false}
+      />
+    );
   }
   return (
     <>
@@ -108,11 +114,6 @@ function DeploymentFormBody({
                 key="advanced-deployment-form"
               />,
               <Differential
-                title={
-                  deployedValues
-                    ? "Difference from deployed values"
-                    : "Difference from example defaults"
-                }
                 oldValues={deployedValues || defaultValues}
                 newValues={values}
                 emptyDiffText={
@@ -127,7 +128,7 @@ function DeploymentFormBody({
         </div>
         <div className="deployment-form-control-buttons">
           <CdsButton status="primary" type="submit">
-            <CdsIcon shape="deploy" inverse={true} /> Deploy
+            <CdsIcon shape="deploy" /> Deploy
           </CdsButton>
           {/* TODO(andresmgot): CdsButton "type" property doesn't work, so we need to use a normal <button>
             https://github.com/vmware/clarity/issues/5038

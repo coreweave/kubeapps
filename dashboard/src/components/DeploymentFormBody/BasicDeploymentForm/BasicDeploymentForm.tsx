@@ -1,4 +1,3 @@
-import * as React from "react";
 import { DeploymentEvent, IBasicFormParam } from "shared/types";
 
 import "./BasicDeploymentForm.css";
@@ -15,7 +14,6 @@ export interface IBasicDeploymentFormProps {
 }
 
 function BasicDeploymentForm(props: IBasicDeploymentFormProps) {
-  console.log(props.params);
   return (
     <div className="deployment-form-tabs-data">
       {props.params.map((param, i) => {

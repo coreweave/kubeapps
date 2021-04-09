@@ -1,6 +1,5 @@
 import actions from "actions";
 import { shallow } from "enzyme";
-import * as React from "react";
 import { act } from "react-dom/test-utils";
 import * as ReactRedux from "react-redux";
 import { ISecret } from "shared/types";
@@ -18,9 +17,12 @@ const secret2 = {
 } as ISecret;
 const defaultProps = {
   imagePullSecrets: [],
-  togglePullSecret: jest.fn(),
-  selectedImagePullSecrets: {},
+  selectPullSecret: jest.fn(),
+  selectedImagePullSecret: "",
   namespace: "default",
+  appVersion: "1.0.0",
+  required: false,
+  disabled: false,
 };
 
 let spyOnUseDispatch: jest.SpyInstance;
@@ -52,19 +54,16 @@ it("shows the list of available pull secrets", () => {
   expect(wrapper.text()).toContain(secret2.metadata.name);
 });
 
-it("select secrets", () => {
+it("select a secret", () => {
   const wrapper = shallow(
     <AppRepoAddDockerCreds
       {...defaultProps}
       imagePullSecrets={[secret1, secret2]}
-      selectedImagePullSecrets={{ [secret1.metadata.name]: true }}
+      selectedImagePullSecret={secret1.metadata.name}
     />,
   );
-  const totalCheckbox = wrapper.find("input").filterWhere(i => i.prop("type") === "checkbox");
-  expect(totalCheckbox.length).toBe(2);
 
-  const selectedCheckbox = totalCheckbox.filterWhere(i => i.prop("checked") === true);
-  expect(selectedCheckbox.length).toBe(1);
+  expect(wrapper.find("select").prop("value")).toBe(secret1.metadata.name);
 });
 
 it("renders the form to create a registry secret", () => {
@@ -127,5 +126,5 @@ it("submits the new secret", async () => {
     defaultProps.namespace,
   );
   // There should be a new item with the secret
-  expect(wrapper.find("#app-repo-secret-repo-1")).toExist();
+  expect(wrapper.find("option").at(1).text()).toEqual(secretName);
 });

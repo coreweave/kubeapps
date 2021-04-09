@@ -1,23 +1,35 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
+import { CdsControlMessage } from "@cds/react/forms";
+import { CdsInput } from "@cds/react/input";
 import actions from "actions";
 import { useDispatch } from "react-redux";
 import { Action } from "redux";
 import { ThunkDispatch } from "redux-thunk";
 import { ISecret, IStoreState } from "../../../shared/types";
+import Tooltip from "components/js/Tooltip";
+
+import "./AppRepoAddDockerCreds.css";
+import { CdsSelect } from "@cds/react/select";
 
 interface IAppRepoFormProps {
   imagePullSecrets: ISecret[];
-  togglePullSecret: (imagePullSecret: string) => () => void;
-  selectedImagePullSecrets: { [key: string]: boolean };
+  selectPullSecret: (imagePullSecret: string) => void;
+  selectedImagePullSecret: string;
   namespace: string;
+  appVersion: string;
+  required: boolean;
+  disabled: boolean;
 }
 
 export function AppRepoAddDockerCreds({
   imagePullSecrets,
-  togglePullSecret,
-  selectedImagePullSecrets,
+  selectPullSecret,
+  selectedImagePullSecret,
   namespace,
+  appVersion,
+  required,
+  disabled,
 }: IAppRepoFormProps) {
   const dispatch: ThunkDispatch<IStoreState, null, Action> = useDispatch();
   const [secretName, setSecretName] = useState("");
@@ -65,125 +77,119 @@ export function AppRepoAddDockerCreds({
       setShowSecretSubForm(false);
     }
   };
-
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
-    <div className="clr-form-columns">
-      {currentImagePullSecrets.length > 0 ? (
-        currentImagePullSecrets.map(secret => {
-          return (
-            <div key={secret.metadata.name} className="clr-checkbox-wrapper">
-              <label
-                className="clr-control-label clr-control-label-checkbox"
-                htmlFor={`app-repo-secret-${secret.metadata.name}`}
-                key={secret.metadata.name}
+    <>
+      <CdsSelect>
+        <label>
+          Associate Docker Registry Credentials{required ? "" : " (optional)"}{" "}
+          <span className="tooltip-wrapper">
+            <Tooltip
+              label="pending-tooltip"
+              id={`pending-tooltip`}
+              icon="help"
+              position="bottom-right"
+              large={true}
+              iconProps={{ solid: true, size: "sm" }}
+            >
+              You can only associate Docker Registry Credentials to namespaced Application
+              Repositories (non-global). More info{" "}
+              <a
+                target="_blank"
+                rel="noreferrer"
+                href="https://github.com/kubeapps/kubeapps/blob/master/docs/user/private-app-repository.md#associating-docker-image-pull-secrets-to-an-apprepository"
               >
-                <input
-                  id={`app-repo-secret-${secret.metadata.name}`}
-                  type="checkbox"
-                  onChange={togglePullSecret(secret.metadata.name)}
-                  checked={selectedImagePullSecrets[secret.metadata.name] || false}
-                />
-                <span>{secret.metadata.name}</span>
-              </label>
-            </div>
-          );
-        })
-      ) : (
-        <label className="clr-control-label">No existing credentials found.</label>
-      )}
+                here
+              </a>
+              .
+            </Tooltip>
+          </span>
+        </label>
+        {currentImagePullSecrets.length ? (
+          <CdsControlMessage>
+            Select existing secret(s) to access a private Docker registry and pull images from it.
+            More info{" "}
+            <a
+              href={`https://github.com/kubeapps/kubeapps/blob/${appVersion}/docs/user/private-app-repository.md`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              here
+            </a>
+            .
+          </CdsControlMessage>
+        ) : (
+          <CdsControlMessage>No existing credentials found.</CdsControlMessage>
+        )}
+        <select
+          value={selectedImagePullSecret}
+          required={required}
+          onChange={e => selectPullSecret(e.target.value)}
+          disabled={disabled}
+        >
+          <option />
+          {currentImagePullSecrets.map(secret => {
+            return <option key={`option-${secret.metadata.name}`}>{secret.metadata.name}</option>;
+          })}
+        </select>
+      </CdsSelect>
       {showSecretSubForm && (
-        <div className="secondary-input">
-          <label className="clr-control-label">New Docker Registry Credentials</label>
-          <div className="clr-form-separator-sm">
-            <label htmlFor="kubeapps-docker-cred-secret-name" className="clr-control-label">
-              Secret Name
-            </label>
-            <div className="clr-control-container">
-              <div className="clr-input-wrapper">
-                <input
-                  id="kubeapps-docker-cred-secret-name"
-                  className="clr-input"
-                  value={secretName}
-                  onChange={handleSecretNameChange}
-                  placeholder="Secret"
-                  required={true}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="clr-form-control">
-            <label className="clr-control-label" htmlFor="kubeapps-docker-cred-server">
-              Server
-            </label>
-            <div className="clr-control-container">
-              <div className="clr-input-wrapper">
-                <input
-                  id="kubeapps-docker-cred-server"
-                  value={server}
-                  className="clr-input"
-                  onChange={handleServerChange}
-                  placeholder="https://index.docker.io/v1/"
-                  required={true}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="clr-form-control">
-            <label className="clr-control-label" htmlFor="kubeapps-docker-cred-username">
-              Username
-            </label>
-            <div className="clr-control-container">
-              <div className="clr-input-wrapper">
-                <input
-                  id="kubeapps-docker-cred-username"
-                  className="clr-input"
-                  value={user}
-                  onChange={handleUserChange}
-                  placeholder="Username"
-                  required={true}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="clr-form-control">
-            <label className="clr-control-label" htmlFor="kubeapps-docker-cred-password">
-              Password
-            </label>
-            <div className="clr-control-container">
-              <div className="clr-input-wrapper">
-                <input
-                  type="password"
-                  id="kubeapps-docker-cred-password"
-                  className="clr-input"
-                  value={password}
-                  onChange={handlePasswordChange}
-                  placeholder="Password"
-                  required={true}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="clr-form-control">
-            <label className="clr-control-label" htmlFor="kubeapps-docker-cred-email">
-              Email
-            </label>
-            <div className="clr-control-container">
-              <div className="clr-input-wrapper">
-                <input
-                  id="kubeapps-docker-cred-email"
-                  className="clr-input"
-                  value={email}
-                  onChange={handleEmailChange}
-                  placeholder="user@example.com"
-                  required={true}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="clr-form-separator">
-            {/* TODO(andresmgot): CdsButton "type" property doesn't work, so we need to use a normal <button>
-            https://github.com/vmware/clarity/issues/5038
-            */}
+        <div className="docker-creds-subform">
+          <h6>New Docker Registry Credentials</h6>
+          <CdsInput className="margin-t-sm">
+            <label>Secret Name</label>
+            <input
+              id="kubeapps-docker-cred-secret-name"
+              value={secretName}
+              onChange={handleSecretNameChange}
+              placeholder="Secret"
+              required={true}
+            />
+          </CdsInput>
+          <CdsInput className="margin-t-sm">
+            <label>Server</label>
+            <input
+              id="kubeapps-docker-cred-server"
+              value={server}
+              onChange={handleServerChange}
+              placeholder="https://index.docker.io/v1/"
+              required={true}
+            />
+          </CdsInput>
+          <CdsInput className="margin-t-sm">
+            <label>Username</label>
+            <input
+              id="kubeapps-docker-cred-username"
+              value={user}
+              onChange={handleUserChange}
+              placeholder="Username"
+              required={true}
+            />
+          </CdsInput>
+          <CdsInput className="margin-t-sm">
+            <label>Password</label>
+            <input
+              id="kubeapps-docker-cred-password"
+              type="password"
+              value={password}
+              onChange={handlePasswordChange}
+              placeholder="Password"
+              required={true}
+            />
+          </CdsInput>
+          <CdsInput className="margin-t-sm">
+            <label>Email</label>
+            <input
+              id="kubeapps-docker-cred-email"
+              value={email}
+              onChange={handleEmailChange}
+              placeholder="user@example.com"
+            />
+          </CdsInput>
+          {/* TODO(andresmgot): CdsButton "type" property doesn't work, so we need to use a normal <button>
+                https://github.com/vmware/clarity/issues/5038
+                */}
+          <div className="margin-t-sm">
             <button
               className="btn btn-info-outline"
               type="button"
@@ -203,19 +209,17 @@ export function AppRepoAddDockerCreds({
           </div>
         </div>
       )}
-      {!showSecretSubForm && (
-        <div className="clr-form-separator-sm">
-          <button
-            className="btn btn-info-outline"
-            type="button"
-            disabled={creating}
-            onClick={toggleCredSubForm}
-          >
-            Add new credentials
-          </button>
-        </div>
-      )}
-    </div>
+      <div hidden={showSecretSubForm} className="docker-creds-subform-button">
+        <button
+          className="btn btn-info-outline"
+          type="button"
+          disabled={disabled || creating}
+          onClick={toggleCredSubForm}
+        >
+          Add new credentials
+        </button>
+      </div>
+    </>
   );
 }
 

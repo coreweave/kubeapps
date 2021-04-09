@@ -7,12 +7,12 @@ metadata:
 data:
   vhost.conf: |-
     server {
-      listen 8080;
+      listen {{ .Values.dashboard.service.port }};
   {{- if .Values.frontend.largeClientHeaderBuffers }}
       large_client_header_buffers {{ .Values.frontend.largeClientHeaderBuffers }};
   {{- end }}
   {{- if .Values.enableIPv6 }}
-      listen [::]:8080;
+      listen [::]:{{ .Values.dashboard.service.port }};
   {{- end}}
       server_name _;
 
@@ -55,7 +55,7 @@ data:
   custom_style.css: |-
 {{- .Values.dashboard.customStyle | nindent 4 }}
   custom_components.js: |-
-{{- .Files.Get .Values.dashboard.customComponents | nindent 4 }}
+{{- .Values.dashboard.customComponents | nindent 4 }}
   custom_locale.json: |-
 {{- .Values.dashboard.customLocale | toJson | nindent 4 }}
   config.json: |-

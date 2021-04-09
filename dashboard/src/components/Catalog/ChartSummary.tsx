@@ -27,7 +27,7 @@ export default function ChartSummary({ version, chartAttrs }: IChartSummaryProps
       {chartAttrs.home && (
         <section className="left-menu-subsection" aria-labelledby="chartinfo-versions">
           <h5 className="left-menu-subsection-title" id="chartinfo-versions">
-            Homie
+            Home
           </h5>
           <div>
             <a href={chartAttrs.home} target="_blank" rel="noopener noreferrer">

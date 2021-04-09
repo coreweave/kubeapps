@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 import { CdsButton } from "@cds/react/button";
 import { CdsIcon } from "@cds/react/icon";
@@ -7,7 +7,7 @@ import actions from "actions";
 import { useDispatch } from "react-redux";
 import { Action } from "redux";
 import { ThunkDispatch } from "redux-thunk";
-import { IAppRepository, ISecret, IStoreState } from "../../../shared/types";
+import { IAppRepository, IAppRepositoryFilter, ISecret, IStoreState } from "../../../shared/types";
 import { AppRepoForm } from "./AppRepoForm";
 
 interface IAppRepoAddButtonProps {
@@ -40,11 +40,13 @@ export function AppRepoAddButton({
     url: string,
     type: string,
     authHeader: string,
+    authRegCreds: string,
     customCA: string,
     syncJobPodTemplate: string,
     registrySecrets: string[],
     ociRepositories: string[],
     skipTLS: boolean,
+    filter?: IAppRepositoryFilter,
   ) => {
     if (repo) {
       return dispatch(
@@ -54,11 +56,13 @@ export function AppRepoAddButton({
           url,
           type,
           authHeader,
+          authRegCreds,
           customCA,
           syncJobPodTemplate,
           registrySecrets,
           ociRepositories,
           skipTLS,
+          filter,
         ),
       );
     } else {
@@ -69,11 +73,13 @@ export function AppRepoAddButton({
           url,
           type,
           authHeader,
+          authRegCreds,
           customCA,
           syncJobPodTemplate,
           registrySecrets,
           ociRepositories,
           skipTLS,
+          filter,
         ),
       );
     }
@@ -87,8 +93,7 @@ export function AppRepoAddButton({
         disabled={disabled}
         title={title}
       >
-        {primary ? <CdsIcon shape="plus-circle" inverse={true} /> : <></>}{" "}
-        {text || "Add App Repository"}
+        {primary ? <CdsIcon shape="plus-circle" /> : <></>} {text || "Add App Repository"}
       </CdsButton>
       {modalIsOpen && (
         <CdsModal size={"lg"} onCloseChange={closeModal}>

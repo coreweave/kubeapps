@@ -2,7 +2,7 @@ import AppList from "components/AppList/AppList";
 import AppView from "components/AppView";
 import AppRepoList from "components/Config/AppRepoList";
 import LoadingWrapper from "components/LoadingWrapper";
-import * as React from "react";
+import React from "react";
 import { Redirect, Route, RouteComponentProps, RouteProps, Switch } from "react-router";
 import ApiDocs from "../../components/ApiDocs";
 import NotFound from "../../components/NotFound";
@@ -75,7 +75,7 @@ class Routes extends React.Component<IRoutesProps> {
   private rootNamespacedRedirect = () => {
     if (this.props.authenticated) {
       if (!this.props.cluster || !this.props.currentNamespace) {
-        return <LoadingWrapper />;
+        return <LoadingWrapper className="margin-t-xxl" loadingText="Fetching Cluster Info..." />;
       }
       return <Redirect to={app.apps.list(this.props.cluster, this.props.currentNamespace)} />;
     }

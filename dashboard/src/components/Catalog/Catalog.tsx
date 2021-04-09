@@ -8,7 +8,7 @@ import Row from "components/js/Row";
 import { push } from "connected-react-router";
 import { flatten, get, intersection, isEqual, trimStart, uniq, without } from "lodash";
 import { ParsedQs } from "qs";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { app } from "shared/url";
@@ -116,8 +116,8 @@ function Catalog(props: ICatalogProps) {
   } = useSelector((state: IStoreState) => state);
 
   const dispatch = useDispatch();
-  const [filters, setFilters] = useState(initialFilterState());
-  const [page, setPage] = useState(1);
+  const [filters, setFilters] = React.useState(initialFilterState());
+  const [page, setPage] = React.useState(1);
 
   useEffect(() => {
     const newFilters = {};
@@ -140,8 +140,8 @@ function Catalog(props: ICatalogProps) {
 
   // hasLoadedFirstPage is used to not bump the current page until the first page is fully
   // requested first
-  const [hasRequestedFirstPage, setHasRequestedFirstPage] = useState(false);
-  const [hasLoadedFirstPage, setHasLoadedFirstPage] = useState(false);
+  const [hasRequestedFirstPage, setHasRequestedFirstPage] = React.useState(false);
+  const [hasLoadedFirstPage, setHasLoadedFirstPage] = React.useState(false);
   useEffect(() => {
     if (isFetching) {
       setHasRequestedFirstPage(true);
@@ -303,6 +303,7 @@ function Catalog(props: ICatalogProps) {
     }
   };
 
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <section>
       <PageHeader
@@ -446,7 +447,7 @@ function Catalog(props: ICatalogProps) {
                       (!filters[filterNames.TYPE].length ||
                         filters[filterNames.TYPE].find((type: string) => type === "Charts")) && (
                         <div className="endPageMessage">
-                          <LoadingWrapper medium={true} loaded={false} />
+                          <LoadingWrapper loaded={false} />
                           {error && !hasFinishedFetching && (
                             <CdsButton size="sm" action="flat" onClick={forceRetry} type="button">
                               {" "}

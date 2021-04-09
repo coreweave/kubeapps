@@ -19,8 +19,12 @@ set -o pipefail
 
 # Constants
 ROOT_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )/.." >/dev/null && pwd)"
-DEV_TAG=${1:?missing dev tag}
-IMG_MODIFIER=${2:-""}
+USE_MULTICLUSTER_OIDC_ENV=${1:-false}
+OLM_VERSION=${2:-"v0.17.0"}
+DEV_TAG=${3:?missing dev tag}
+IMG_MODIFIER=${4:-""}
+DEX_IP=${5:-"172.18.0.2"}
+ADDITIONAL_CLUSTER_IP=${6:-"172.18.0.3"}
 
 # TODO(andresmgot): While we work with beta releases, the Bitnami pipeline
 # removes the pre-release part of the tag
@@ -75,12 +79,34 @@ installOLM() {
     url=https://github.com/operator-framework/operator-lifecycle-manager/releases/download/${release}
     namespace=olm
 
-    kubectl apply -f ${url}/crds.yaml
-    kubectl apply -f ${url}/olm.yaml
+    kubectl apply -f "${url}/crds.yaml"
+    kubectl wait --for=condition=Established -f "${url}/crds.yaml"
+    kubectl apply -f "${url}/olm.yaml"
 
     # wait for deployments to be ready
     kubectl rollout status -w deployment/olm-operator --namespace="${namespace}"
     kubectl rollout status -w deployment/catalog-operator --namespace="${namespace}"
+
+    retries=30
+    until [[ $retries == 0 ]]; do
+        new_csv_phase=$(kubectl get csv -n "${namespace}" packageserver -o jsonpath='{.status.phase}' 2>/dev/null || echo "Waiting for CSV to appear")
+        if [[ $new_csv_phase != "$csv_phase" ]]; then
+            csv_phase=$new_csv_phase
+            echo "CSV \"packageserver\" phase: $csv_phase"
+        fi
+        if [[ "$new_csv_phase" == "Succeeded" ]]; then
+      break
+        fi
+        sleep 10
+        retries=$((retries - 1))
+    done
+
+  if [ $retries == 0 ]; then
+      echo "CSV \"packageserver\" failed to reach phase succeeded"
+      exit 1
+  fi
+
+  kubectl rollout status -w deployment/packageserver --namespace="${namespace}"
 }
 
 ########################
@@ -138,19 +164,24 @@ installOrUpgradeKubeapps() {
     local chartSource=$1
     # Install Kubeapps
     info "Installing Kubeapps..."
+    kubectl -n kubeapps delete secret localhost-tls || true
+
     helm upgrade --install kubeapps-ci --namespace kubeapps "${chartSource}" \
       ${invalidateCacheFlag} \
       "${img_flags[@]}" \
+      "${@:2}" \
+      "${multiclusterFlags[@]+"${multiclusterFlags[@]}"}" \
       --set frontend.replicaCount=1 \
       --set kubeops.replicaCount=1 \
       --set assetsvc.replicaCount=1 \
       --set dashboard.replicaCount=1 \
-      --set postgresql.replication.enabled=false
+      --set postgresql.replication.enabled=false \
+      --set postgresql.postgresqlPassword=password
 }
 
 # Operators are not supported in GKE 1.14 and flaky in 1.15
 if [[ -z "${GKE_BRANCH-}" ]]; then
-  installOLM 0.16.1
+  installOLM $OLM_VERSION
 fi
 
 info "IMAGE TAG TO BE TESTED: $DEV_TAG"
@@ -167,6 +198,7 @@ images=(
   "assetsvc"
   "dashboard"
   "kubeops"
+  "pinniped-proxy"
 )
 images=("${images[@]/#/${image_prefix}}")
 images=("${images[@]/%/${IMG_MODIFIER}}")
@@ -181,12 +213,40 @@ img_flags=(
   "--set" "dashboard.image.repository=${images[3]}"
   "--set" "kubeops.image.tag=${DEV_TAG}"
   "--set" "kubeops.image.repository=${images[4]}"
+  "--set" "pinnipedProxy.image.tag=${DEV_TAG}"
+  "--set" "pinnipedProxy.image.repository=${images[5]}"
 )
 
 # TODO(andresmgot): Remove this condition with the parameter in the next version
 invalidateCacheFlag=""
 if [[ -z "${TEST_LATEST_RELEASE:-}" ]]; then
   invalidateCacheFlag="--set featureFlags.invalidateCache=true"
+fi
+
+if [ "$USE_MULTICLUSTER_OIDC_ENV" = true ] ; then
+  multiclusterFlags=(
+    "--set" "ingress.enabled=true"
+    "--set" "ingress.hostname=localhost"
+    "--set" "ingress.tls=true"
+    "--set" "authProxy.enabled=true"
+    "--set" "authProxy.provider=oidc"
+    "--set" "authProxy.clientID=default"
+    "--set" "authProxy.clientSecret=ZXhhbXBsZS1hcHAtc2VjcmV0"
+    "--set" "authProxy.cookieSecret=bm90LWdvb2Qtc2VjcmV0Cg=="
+    "--set" "authProxy.additionalFlags[0]=\"--oidc-issuer-url=https://${DEX_IP}:32000\""
+    "--set" "authProxy.additionalFlags[1]=\"--scope=openid email groups audience:server:client_id:second-cluster audience:server:client_id:third-cluster\""
+    "--set" "authProxy.additionalFlags[2]=\"--ssl-insecure-skip-verify=true\""
+    "--set" "authProxy.additionalFlags[3]=\"--redirect-url=http://kubeapps-ci.kubeapps/oauth2/callback\""
+    "--set" "authProxy.additionalFlags[4]=\"--cookie-secure=false\""
+    "--set" "authProxy.additionalFlags[5]=\"--cookie-domain=kubeapps-ci.kubeapps\""
+    "--set" "authProxy.additionalFlags[6]=\"--whitelist-domain=kubeapps-ci.kubeapps\""
+    "--set" "authProxy.additionalFlags[7]=\"--set-authorization-header=true\""
+    "--set" "clusters[0].name=default"
+    "--set" "clusters[1].name=second-cluster"
+    "--set" "clusters[1].apiServiceURL=https://${ADDITIONAL_CLUSTER_IP}:6443"
+    "--set" "clusters[1].insecure=true"
+    "--set" "clusters[1].serviceToken=ZXlKaGJHY2lPaUpTVXpJMU5pSXNJbXRwWkNJNklsbHpiSEp5TlZwM1QwaG9WSE5PYkhVdE5GQkRablY2TW0wd05rUmtMVmxFWVV4MlZEazNaeTEyUmxFaWZRLmV5SnBjM01pT2lKcmRXSmxjbTVsZEdWekwzTmxjblpwWTJWaFkyTnZkVzUwSWl3aWEzVmlaWEp1WlhSbGN5NXBieTl6WlhKMmFXTmxZV05qYjNWdWRDOXVZVzFsYzNCaFkyVWlPaUprWldaaGRXeDBJaXdpYTNWaVpYSnVaWFJsY3k1cGJ5OXpaWEoyYVdObFlXTmpiM1Z1ZEM5elpXTnlaWFF1Ym1GdFpTSTZJbXQxWW1WaGNIQnpMVzVoYldWemNHRmpaUzFrYVhOamIzWmxjbmt0ZEc5clpXNHRjV295Ym1naUxDSnJkV0psY201bGRHVnpMbWx2TDNObGNuWnBZMlZoWTJOdmRXNTBMM05sY25acFkyVXRZV05qYjNWdWRDNXVZVzFsSWpvaWEzVmlaV0Z3Y0hNdGJtRnRaWE53WVdObExXUnBjMk52ZG1WeWVTSXNJbXQxWW1WeWJtVjBaWE11YVc4dmMyVnlkbWxqWldGalkyOTFiblF2YzJWeWRtbGpaUzFoWTJOdmRXNTBMblZwWkNJNkltVXhaakE1WmpSakxUTTRNemt0TkRJME15MWhZbUptTFRKaU5HWm1OREZrWW1RMllTSXNJbk4xWWlJNkluTjVjM1JsYlRwelpYSjJhV05sWVdOamIzVnVkRHBrWldaaGRXeDBPbXQxWW1WaGNIQnpMVzVoYldWemNHRmpaUzFrYVhOamIzWmxjbmtpZlEuTnh6V2dsUGlrVWpROVQ1NkpWM2xJN1VWTUVSR3J2bklPSHJENkh4dUVwR0luLWFUUzV5Q0pDa3Z0cTF6S3Z3b05sc2MyX0YxaTdFOUxWRGFwbC1UQlhleUN5Rl92S1B1TDF4dTdqZFBMZ1dKT1pQX3JMcXppaDV4ZlkxalFoOHNhdTRZclFJLUtqb3U1UkRRZ0tOQS1BaS1lRlFOZVh2bmlUNlBKYWVkc184V0t3dHRMMC1wdHpYRnBnOFl5dkx6N0U1UWdTR2tjNWpDVXlsS0RvZVRUaVRSOEc2RHFHYkFQQUYwREt0b3MybU9Geno4SlJYNHhoQmdvaUcxVTVmR1g4Z3hnTU1SV0VHRE9kaGMyeXRvcFdRUkRpYmhvaldNS3VDZlNua09zMDRGYTBkYmEwQ0NTbld2a29LZ3Z4QVR5aVVrWm9wV3VpZ1JJNFd5dDkzbXhR"
+  )
 fi
 
 helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -196,13 +256,16 @@ kubectl create ns kubeapps
 if [[ -n "${TEST_UPGRADE}" ]]; then
   # To test the upgrade, first install the latest version published
   info "Installing latest Kubeapps chart available"
-  installOrUpgradeKubeapps bitnami/kubeapps
-  # Due to a breaking change in PG chart 9.X, we need to delete the statefulset before upgrading
-  # This can be removed after the release 2.0.0
-  kubectl delete statefulset -n kubeapps --all
+  installOrUpgradeKubeapps bitnami/kubeapps \
+    "--set" "apprepository.initialRepos=null"
+
+  info "Waiting for Kubeapps components to be ready..."
+  k8s_wait_for_deployment kubeapps kubeapps-ci
 fi
 
 installOrUpgradeKubeapps "${ROOT_DIR}/chart/kubeapps"
+info "Waiting for Kubeapps components to be ready..."
+k8s_wait_for_deployment kubeapps kubeapps-ci
 installChartmuseum admin password
 pushChart apache 7.3.15 admin password
 pushChart apache 7.3.16 admin password
@@ -220,12 +283,12 @@ deployments=(
   "kubeapps-ci-internal-apprepository-controller"
   "kubeapps-ci-internal-assetsvc"
   "kubeapps-ci-internal-dashboard"
+  "kubeapps-ci-internal-kubeops"
 )
 for dep in "${deployments[@]}"; do
   k8s_wait_for_deployment kubeapps "$dep"
   info "Deployment ${dep} ready"
 done
-k8s_wait_for_deployment kubeapps kubeapps-ci-internal-kubeops
 
 # Wait for Kubeapps Jobs
 # Clean up existing jobs
@@ -261,7 +324,12 @@ if [[ -z "${TEST_LATEST_RELEASE:-}" ]]; then
     kubectl get pods -n kubeapps
     for pod in $(kubectl get po -l release=kubeapps-ci -oname -n kubeapps); do
       warn "LOGS for pod $pod ------------"
-      kubectl logs -n kubeapps "$pod"
+      if [[ "$pod" =~ .*internal.* ]]; then
+        kubectl logs -n kubeapps "$pod"
+      else
+        kubectl logs -n kubeapps "$pod" nginx
+        kubectl logs -n kubeapps "$pod" auth-proxy
+      fi
     done;
     echo
     warn "LOGS for assetsvc tests --------"
@@ -291,8 +359,9 @@ for f in *.js; do
 done
 testsToIgnore=()
 # Operators are not supported in GKE 1.14 and flaky in 1.15, skipping test
+# Also skip the multicluster scenario
 if [[ -n "${GKE_BRANCH-}" ]]; then
-  testsToIgnore=("operator-deployment.js" "${testsToIgnore[@]}")
+  testsToIgnore=("operator-deployment.js" "add-multicluster-deployment.js" "${testsToIgnore[@]}")
 fi
 ignoreFlag=""
 if [[ "${#testsToIgnore[@]}" > "0" ]]; then
@@ -315,6 +384,7 @@ kubectl create clusterrolebinding kubeapps-view --clusterrole=view --serviceacco
 kubectl create serviceaccount kubeapps-edit -n kubeapps
 kubectl create rolebinding kubeapps-edit -n kubeapps --clusterrole=edit --serviceaccount kubeapps:kubeapps-edit
 kubectl create rolebinding kubeapps-edit -n default --clusterrole=edit --serviceaccount kubeapps:kubeapps-edit
+
 ## Give the cluster some time to avoid issues like
 ## https://circleci.com/gh/kubeapps/kubeapps/16102
 retry_while "kubectl get -n kubeapps serviceaccount kubeapps-operator -o name" "5" "1"
@@ -324,9 +394,10 @@ retry_while "kubectl get -n kubeapps serviceaccount kubeapps-edit -o name" "5" "
 admin_token="$(kubectl get -n kubeapps secret "$(kubectl get -n kubeapps serviceaccount kubeapps-operator -o jsonpath='{.secrets[].name}')" -o go-template='{{.data.token | base64decode}}' && echo)"
 view_token="$(kubectl get -n kubeapps secret "$(kubectl get -n kubeapps serviceaccount kubeapps-view -o jsonpath='{.secrets[].name}')" -o go-template='{{.data.token | base64decode}}' && echo)"
 edit_token="$(kubectl get -n kubeapps secret "$(kubectl get -n kubeapps serviceaccount kubeapps-edit -o jsonpath='{.secrets[].name}')" -o go-template='{{.data.token | base64decode}}' && echo)"
+
 ## Run tests
 info "Running Integration tests..."
-if ! kubectl exec -it "$pod" -- /bin/sh -c "INTEGRATION_ENTRYPOINT=http://kubeapps-ci.kubeapps ADMIN_TOKEN=${admin_token} VIEW_TOKEN=${view_token} EDIT_TOKEN=${edit_token} yarn start ${ignoreFlag}"; then
+if ! kubectl exec -it "$pod" -- /bin/sh -c "INTEGRATION_ENTRYPOINT=http://kubeapps-ci.kubeapps USE_MULTICLUSTER_OIDC_ENV=${USE_MULTICLUSTER_OIDC_ENV} ADMIN_TOKEN=${admin_token} VIEW_TOKEN=${view_token} EDIT_TOKEN=${edit_token} yarn start ${ignoreFlag}"; then
   ## Integration tests failed, get report screenshot
   warn "PODS status on failure"
   kubectl cp "${pod}:/app/reports" ./reports

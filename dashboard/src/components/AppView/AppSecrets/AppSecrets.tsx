@@ -1,8 +1,8 @@
 import { isEmpty } from "lodash";
-import React from "react";
 import { useSelector } from "react-redux";
 import { ISecret, IStoreState } from "shared/types";
 
+import LoadingWrapper from "components/LoadingWrapper";
 import ResourceRef from "shared/ResourceRef";
 import { flattenResources } from "shared/utils";
 import SecretItemDatum from "../ResourceTable/ResourceItem/SecretItem/SecretItemDatum";
@@ -29,7 +29,9 @@ function AppSecrets({ secretRefs }: IResourceTableProps) {
     flattenResources(secretRefs, state.kube.items),
   );
   let content;
-  if (secretRefs.length === 0) {
+  if (secrets.some(s => s.isFetching)) {
+    content = <LoadingWrapper />;
+  } else if (secretRefs.length === 0) {
     content = "The current application does not include secrets";
   } else {
     content = secrets.map(secret => {
@@ -41,7 +43,7 @@ function AppSecrets({ secretRefs }: IResourceTableProps) {
     });
   }
   return (
-    <section aria-labelledby="app-secrets" className="app-secrets-section">
+    <section aria-labelledby="app-secrets">
       <h5 className="section-title" id="app-secrets">
         Application Secrets
       </h5>

@@ -1,7 +1,7 @@
 import { CdsIcon } from "@cds/react/icon";
-import { flatten } from "lodash";
-import { get } from "lodash";
-import React, { useEffect, useState } from "react";
+import { flatten, get } from "lodash";
+
+import { useEffect, useState } from "react";
 import { PieChart } from "react-minimal-pie-chart";
 
 import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
@@ -16,8 +16,6 @@ interface IApplicationStatusProps {
   statefulsets: Array<IKubeItem<IResource | IK8sList<IResource, {}>>>;
   daemonsets: Array<IKubeItem<IResource | IK8sList<IResource, {}>>>;
   info?: hapi.release.IInfo;
-  watchWorkloads: () => void;
-  closeWatches: () => void;
 }
 
 interface IWorkload {
@@ -65,22 +63,10 @@ export default function ApplicationStatus({
   statefulsets,
   daemonsets,
   info,
-  watchWorkloads,
-  closeWatches,
 }: IApplicationStatusProps) {
   const [workloads, setWorkloads] = useState([] as IWorkload[]);
   const [totalPods, setTotalPods] = useState(0);
   const [readyPods, setReadyPods] = useState(0);
-
-  useEffect(() => {
-    watchWorkloads();
-    // TODO: Closing websockets before the connection is established
-    // causes a warning. More info at:
-    // https://github.com/kubeapps/kubeapps/issues/2276
-    return function cleanup() {
-      closeWatches();
-    };
-  }, [watchWorkloads, closeWatches]);
 
   useEffect(() => {
     let currentTotalPods = 0;
@@ -132,9 +118,8 @@ export default function ApplicationStatus({
 
   if (isSomeResourceLoading(deployments.concat(statefulsets).concat(daemonsets))) {
     return (
-      <div className="center">
-        Loading Status...
-        <LoadingWrapper medium={true} />
+      <div className="statusLoadingWrapper margin-t-xl">
+        <LoadingWrapper loadingText="Loading..." size={"md"} />
       </div>
     );
   }

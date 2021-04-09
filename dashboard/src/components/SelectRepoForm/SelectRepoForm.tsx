@@ -1,5 +1,5 @@
 import { get } from "lodash";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import actions from "actions";
@@ -59,7 +59,11 @@ function SelectRepoForm({ cluster, namespace, chartName }: ISelectRepoFormProps)
   };
 
   return (
-    <LoadingWrapper loaded={!isFetching}>
+    <LoadingWrapper
+      className="margin-t-xxl"
+      loadingText="Fetching Application Repositories..."
+      loaded={!isFetching}
+    >
       {fetchError && <Alert theme="danger">An error occurred: {fetchError.message}</Alert>}
       {!fetchError && repos.length === 0 && (
         <Alert theme="warning">

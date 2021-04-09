@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { useDispatch } from "react-redux";
 import remarkGfm from "remark-gfm";
@@ -40,7 +40,11 @@ function ChartReadme({ chartID, error, cluster, namespace, readme, version }: IC
     return <Alert theme="danger">Unable to fetch chart README: {error}</Alert>;
   }
   return (
-    <LoadingWrapper loaded={!!readme}>
+    <LoadingWrapper
+      className="margin-t-xxl"
+      loadingText="Fetching application README..."
+      loaded={!!readme}
+    >
       {readme && (
         <div className="application-readme">
           <ReactMarkdown

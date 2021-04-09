@@ -1,5 +1,6 @@
 import { mount } from "enzyme";
 import { IBasicFormParam } from "shared/types";
+import { CustomComponent } from "../../../RemoteComponent";
 import CustomFormComponentLoader from "./CustomFormParam";
 
 const param = {
@@ -17,20 +18,25 @@ const defaultProps = {
 };
 
 // Mocking the window so that the injected components are imported correctly
-const { location } = window;
+const location = window.location;
 beforeAll((): void => {
-  // @ts-ignore
-  delete window.location;
-  // @ts-ignore
-  window.location = {
-    origin: "../../../../../docs/developer/examples/custom_components.js",
-  };
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    writable: true,
+    value: { origin: "../../../../../docs/developer/examples/CustomComponent.min.js" },
+  });
 });
 afterAll((): void => {
+  // eslint-disable-next-line no-restricted-globals
   window.location = location;
 });
 
 it("should render a custom form component", () => {
   const wrapper = mount(<CustomFormComponentLoader {...defaultProps} />);
-  expect(wrapper).toMatchSnapshot();
+  expect(wrapper.find(CustomFormComponentLoader)).toExist();
+});
+
+it("should render the remote component", () => {
+  const wrapper = mount(<CustomFormComponentLoader {...defaultProps} />);
+  expect(wrapper.find(CustomComponent)).toExist();
 });

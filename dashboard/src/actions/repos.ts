@@ -7,6 +7,7 @@ import Chart from "../shared/Chart";
 import Secret from "../shared/Secret";
 import {
   IAppRepository,
+  IAppRepositoryFilter,
   IAppRepositoryKey,
   ISecret,
   IStoreState,
@@ -240,11 +241,13 @@ export const installRepo = (
   repoURL: string,
   type: string,
   authHeader: string,
+  authRegCreds: string,
   customCA: string,
   syncJobPodTemplate: string,
   registrySecrets: string[],
   ociRepositories: string[],
   skipTLS: boolean,
+  filter?: IAppRepositoryFilter,
 ): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
   return async (dispatch, getState) => {
     const {
@@ -260,11 +263,13 @@ export const installRepo = (
         repoURL,
         type,
         authHeader,
+        authRegCreds,
         customCA,
         syncJobPodTemplateObj,
         registrySecrets,
         ociRepositories,
         skipTLS,
+        filter,
       );
       dispatch(addedRepo(data.appRepository));
 
@@ -282,11 +287,13 @@ export const updateRepo = (
   repoURL: string,
   type: string,
   authHeader: string,
+  authRegCreds: string,
   customCA: string,
   syncJobPodTemplate: string,
   registrySecrets: string[],
   ociRepositories: string[],
   skipTLS: boolean,
+  filter?: IAppRepositoryFilter,
 ): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
   return async (dispatch, getState) => {
     const {
@@ -302,11 +309,13 @@ export const updateRepo = (
         repoURL,
         type,
         authHeader,
+        authRegCreds,
         customCA,
         syncJobPodTemplateObj,
         registrySecrets,
         ociRepositories,
         skipTLS,
+        filter,
       );
       dispatch(repoUpdated(data.appRepository));
       // Re-fetch the helm repo secret that could have been modified with the updated headers
@@ -337,6 +346,7 @@ export const validateRepo = (
   repoURL: string,
   type: string,
   authHeader: string,
+  authRegCreds: string,
   customCA: string,
   ociRepositories: string[],
   skipTLS: boolean,
@@ -352,6 +362,7 @@ export const validateRepo = (
         repoURL,
         type,
         authHeader,
+        authRegCreds,
         customCA,
         ociRepositories,
         skipTLS,

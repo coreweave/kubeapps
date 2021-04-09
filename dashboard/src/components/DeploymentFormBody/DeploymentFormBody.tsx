@@ -1,5 +1,5 @@
 import Tabs from "components/Tabs";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CdsButton } from "@cds/react/button";
 import { CdsIcon } from "@cds/react/icon";
@@ -107,7 +107,7 @@ function DeploymentFormBody({
     );
   }
   if (chartsIsFetching || !version || !versions.length) {
-    return <LoadingWrapper />;
+    return <LoadingWrapper className="margin-t-xxl" loadingText={`Fetching ${chartID}...`} />;
   }
   const tabColumns = [
     "YAML",
@@ -138,7 +138,11 @@ function DeploymentFormBody({
     />,
   ];
   if (shouldRenderBasicForm()) {
-    tabColumns.unshift(<span onClick={refreshBasicParameters}>Form</span>);
+    tabColumns.unshift(
+      <span role="presentation" onClick={refreshBasicParameters}>
+        Form
+      </span>,
+    );
     tabData.unshift(
       <BasicDeploymentForm
         deploymentEvent={deploymentEvent}
@@ -166,7 +170,7 @@ function DeploymentFormBody({
       </div>
       <div className="deployment-form-control-buttons">
         <CdsButton status="primary" type="submit">
-          <CdsIcon shape="deploy" inverse={true} /> Deploy v{version.attributes.version}
+          <CdsIcon shape="deploy" /> Deploy {version.attributes.version}
         </CdsButton>
         {/* TODO(andresmgot): CdsButton "type" property doesn't work, so we need to use a normal <button>
             https://github.com/vmware/clarity/issues/5038

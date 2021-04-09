@@ -1,5 +1,10 @@
 import axios from "axios";
 
+export enum SupportedThemes {
+  dark = "dark",
+  light = "light",
+}
+
 // IConfig is the configuration for Kubeapps
 export interface IConfig {
   kubeappsCluster: string;
@@ -11,6 +16,7 @@ export interface IConfig {
   authProxySkipLoginPage: boolean;
   error?: Error;
   clusters: string[];
+  theme: SupportedThemes;
 }
 
 export default class Config {
@@ -20,5 +26,21 @@ export default class Config {
     return data;
   }
 
-  private static APIEndpoint: string = "config.json";
+  public static getTheme() {
+    let theme = localStorage.getItem("theme");
+    if (!theme) {
+      theme =
+        window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? SupportedThemes.dark
+          : SupportedThemes.light;
+    }
+    return (theme as SupportedThemes) || SupportedThemes.light;
+  }
+
+  public static setTheme(theme: SupportedThemes) {
+    document.body.setAttribute("cds-theme", theme);
+    localStorage.setItem("theme", theme);
+  }
+
+  private static APIEndpoint = "config.json";
 }

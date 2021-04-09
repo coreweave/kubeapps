@@ -40,8 +40,10 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/disintegration/imaging"
 	"github.com/ghodss/yaml"
+	"github.com/itchyny/gojq"
 	"github.com/jinzhu/copier"
 	"github.com/kubeapps/common/datastore"
+	apprepov1alpha1 "github.com/kubeapps/kubeapps/cmd/apprepository-controller/pkg/apis/apprepository/v1alpha1"
 	"github.com/kubeapps/kubeapps/pkg/chart/models"
 	"github.com/kubeapps/kubeapps/pkg/helm"
 	log "github.com/sirupsen/logrus"
@@ -133,6 +135,7 @@ type HelmRepo struct {
 	content []byte
 	*models.RepoInternal
 	netClient httpClient
+	filter    *apprepov1alpha1.FilterRuleSpec
 }
 
 // Checksum returns the sha256 of the repo
@@ -143,6 +146,74 @@ func (r *HelmRepo) Checksum() (string, error) {
 // Repo returns the repo information
 func (r *HelmRepo) Repo() *models.RepoInternal {
 	return r.RepoInternal
+}
+
+func compileJQ(rule *apprepov1alpha1.FilterRuleSpec) (*gojq.Code, []interface{}, error) {
+	query, err := gojq.Parse(rule.JQ)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Unable to parse jq query: %v", err)
+	}
+	varNames := []string{}
+	varValues := []interface{}{}
+	for name, val := range rule.Variables {
+		varNames = append(varNames, name)
+		varValues = append(varValues, val)
+	}
+	code, err := gojq.Compile(
+		query,
+		gojq.WithVariables(varNames),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Unable to compile jq: %v", err)
+	}
+	return code, varValues, nil
+}
+
+func satisfy(chartInput map[string]interface{}, code *gojq.Code, vars []interface{}) (bool, error) {
+	res, _ := code.Run(chartInput, vars...).Next()
+	if err, ok := res.(error); ok {
+		return false, fmt.Errorf("Unable to run jq: %v", err)
+	}
+
+	satisfied, ok := res.(bool)
+	if !ok {
+		return false, fmt.Errorf("Unable to convert jq result to boolean. Got: %v", res)
+	}
+	return satisfied, nil
+}
+
+func filterCharts(charts []models.Chart, filterRule *apprepov1alpha1.FilterRuleSpec) ([]models.Chart, error) {
+	if filterRule == nil || filterRule.JQ == "" {
+		// No filter
+		return charts, nil
+	}
+	jqCode, vars, err := compileJQ(filterRule)
+	if err != nil {
+		return nil, err
+	}
+	result := []models.Chart{}
+	for _, chart := range charts {
+		// Convert the chart to a map[interface]{}
+		chartBytes, err := json.Marshal(chart)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to parse chart: %v", err)
+		}
+		chartInput := map[string]interface{}{}
+		err = json.Unmarshal(chartBytes, &chartInput)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to parse chart: %v", err)
+		}
+
+		satisfied, err := satisfy(chartInput, jqCode, vars)
+		if err != nil {
+			return nil, err
+		}
+		if satisfied {
+			// All rules have been checked and matched
+			result = append(result, chart)
+		}
+	}
+	return result, nil
 }
 
 // Charts retrieve the list of charts exposed in the repo
@@ -163,7 +234,7 @@ func (r *HelmRepo) Charts() ([]models.Chart, error) {
 		return []models.Chart{}, fmt.Errorf("no charts in repository index")
 	}
 
-	return charts, nil
+	return filterCharts(charts, r.filter)
 }
 
 const (
@@ -247,6 +318,7 @@ type OCIRegistry struct {
 	tags   map[string]TagList
 	puller helm.ChartPuller
 	ociCli ociAPI
+	filter *apprepov1alpha1.FilterRuleSpec
 }
 
 func doReq(url string, cli httpClient, headers map[string]string) ([]byte, error) {
@@ -355,57 +427,14 @@ func tagCheckerWorker(o ociAPI, tagJobs <-chan checkTagJob, resultChan chan chec
 // Caveat: Mutated image tags won't be detected as new
 func (r *OCIRegistry) Checksum() (string, error) {
 	r.tags = map[string]TagList{}
-	checktagJobs := make(chan checkTagJob, numWorkers)
-	tagcheckRes := make(chan checkTagResult, numWorkers)
-	var wg sync.WaitGroup
-
-	// Process 10 tags at a time
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			tagCheckerWorker(r.ociCli, checktagJobs, tagcheckRes)
-			wg.Done()
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(tagcheckRes)
-	}()
-
-	unfilteredTags := map[string]TagList{}
 	for _, appName := range r.repositories {
 		tags, err := r.ociCli.TagList(appName)
 		if err != nil {
 			return "", err
 		}
-		unfilteredTags[appName] = *tags
+		r.tags[appName] = *tags
 	}
 
-	go func() {
-		for _, appName := range r.repositories {
-			for _, tag := range unfilteredTags[appName].Tags {
-				checktagJobs <- checkTagJob{AppName: appName, Tag: tag}
-			}
-		}
-		close(checktagJobs)
-	}()
-
-	// Start receiving tags
-	for res := range tagcheckRes {
-		if res.Error == nil {
-			if res.isHelmChart {
-				r.tags[res.AppName] = TagList{
-					Name: unfilteredTags[res.AppName].Name,
-					Tags: append(r.tags[res.AppName].Tags, res.Tag),
-				}
-				sort.Strings(r.tags[res.AppName].Tags)
-			}
-		} else {
-			log.Errorf("failed to pull chart. Got %v", res.Error)
-		}
-	}
-
-	log.Debugf("Final list of tags: %v", r.tags)
 	content, err := json.Marshal(r.tags)
 	if err != nil {
 		return "", err
@@ -548,6 +577,51 @@ func chartImportWorker(repoURL *url.URL, r *OCIRegistry, chartJobs <-chan pullCh
 	}
 }
 
+func (r *OCIRegistry) filterTags() {
+	unfilteredTags := r.tags
+	r.tags = map[string]TagList{}
+	checktagJobs := make(chan checkTagJob, numWorkers)
+	tagcheckRes := make(chan checkTagResult, numWorkers)
+	var wg sync.WaitGroup
+
+	// Process 10 tags at a time
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			tagCheckerWorker(r.ociCli, checktagJobs, tagcheckRes)
+			wg.Done()
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(tagcheckRes)
+	}()
+
+	go func() {
+		for _, appName := range r.repositories {
+			for _, tag := range unfilteredTags[appName].Tags {
+				checktagJobs <- checkTagJob{AppName: appName, Tag: tag}
+			}
+		}
+		close(checktagJobs)
+	}()
+
+	// Start receiving tags
+	for res := range tagcheckRes {
+		if res.Error == nil {
+			if res.isHelmChart {
+				r.tags[res.AppName] = TagList{
+					Name: unfilteredTags[res.AppName].Name,
+					Tags: append(r.tags[res.AppName].Tags, res.Tag),
+				}
+				sort.Strings(r.tags[res.AppName].Tags)
+			}
+		} else {
+			log.Errorf("failed to pull chart. Got %v", res.Error)
+		}
+	}
+}
+
 // Charts retrieve the list of charts exposed in the repo
 func (r *OCIRegistry) Charts() ([]models.Chart, error) {
 	result := map[string]*models.Chart{}
@@ -555,6 +629,9 @@ func (r *OCIRegistry) Charts() ([]models.Chart, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Filter the current tags before pulling charts
+	r.filterTags()
 
 	chartJobs := make(chan pullChartJob, numWorkers)
 	chartResults := make(chan pullChartResult, numWorkers)
@@ -603,7 +680,7 @@ func (r *OCIRegistry) Charts() ([]models.Chart, error) {
 	for _, c := range result {
 		charts = append(charts, *c)
 	}
-	return charts, nil
+	return filterCharts(charts, r.filter)
 }
 
 // FetchFiles do nothing for the OCI case since they have been already fetched in the Charts() method
@@ -615,7 +692,18 @@ func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion) (map[strin
 	}, nil
 }
 
-func getHelmRepo(namespace, name, repoURL, authorizationHeader string, netClient httpClient) (Repo, error) {
+func parseFilters(filters string) (*apprepov1alpha1.FilterRuleSpec, error) {
+	filterSpec := &apprepov1alpha1.FilterRuleSpec{}
+	if len(filters) > 0 {
+		err := json.Unmarshal([]byte(filters), filterSpec)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return filterSpec, nil
+}
+
+func getHelmRepo(namespace, name, repoURL, authorizationHeader string, filter *apprepov1alpha1.FilterRuleSpec, netClient httpClient) (Repo, error) {
 	url, err := parseRepoURL(repoURL)
 	if err != nil {
 		log.WithFields(log.Fields{"url": repoURL}).WithError(err).Error("failed to parse URL")
@@ -636,10 +724,11 @@ func getHelmRepo(namespace, name, repoURL, authorizationHeader string, netClient
 			AuthorizationHeader: authorizationHeader,
 		},
 		netClient: netClient,
+		filter:    filter,
 	}, nil
 }
 
-func getOCIRepo(namespace, name, repoURL, authorizationHeader string, ociRepos []string, netClient *http.Client) (Repo, error) {
+func getOCIRepo(namespace, name, repoURL, authorizationHeader string, filter *apprepov1alpha1.FilterRuleSpec, ociRepos []string, netClient *http.Client) (Repo, error) {
 	url, err := parseRepoURL(repoURL)
 	if err != nil {
 		log.WithFields(log.Fields{"url": repoURL}).WithError(err).Error("failed to parse URL")
@@ -656,6 +745,7 @@ func getOCIRepo(namespace, name, repoURL, authorizationHeader string, ociRepos [
 		RepoInternal: &models.RepoInternal{Namespace: namespace, Name: name, URL: url.String(), AuthorizationHeader: authorizationHeader},
 		puller:       &helm.OCIPuller{Resolver: ociResolver},
 		ociCli:       &ociAPICli{authHeader: authorizationHeader, url: url, netClient: netClient},
+		filter:       filter,
 	}, nil
 }
 

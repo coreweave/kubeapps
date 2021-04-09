@@ -1,12 +1,10 @@
 import ConfirmDialog from "components/ConfirmDialog/ConfirmDialog";
 import AdvancedDeploymentForm from "components/DeploymentFormBody/AdvancedDeploymentForm";
 import Alert from "components/js/Alert";
-import { mount } from "enzyme";
-import * as React from "react";
+import LoadingWrapper from "components/LoadingWrapper";
 import { act } from "react-dom/test-utils";
-import itBehavesLike from "../../shared/specs";
-import OperatorInstanceFormBody from "./OperatorInstanceFormBody";
-import { IOperatorInstanceFormProps } from "./OperatorInstanceFormBody";
+import { defaultStore, mountWrapper } from "shared/specs/mountWrapper";
+import OperatorInstanceFormBody, { IOperatorInstanceFormProps } from "./OperatorInstanceFormBody";
 
 const defaultProps: IOperatorInstanceFormProps = {
   isFetching: false,
@@ -15,18 +13,27 @@ const defaultProps: IOperatorInstanceFormProps = {
   defaultValues: "",
 };
 
-itBehavesLike("aLoadingComponent", {
-  component: OperatorInstanceFormBody,
-  props: { ...defaultProps, isFetching: true },
+it("set a loading wrapper", () => {
+  const wrapper = mountWrapper(
+    defaultStore,
+    <OperatorInstanceFormBody {...defaultProps} isFetching={true} />,
+  );
+  expect(wrapper.find(LoadingWrapper).prop("loaded")).toBe(false);
 });
 
 it("set default values", () => {
-  const wrapper = mount(<OperatorInstanceFormBody {...defaultProps} defaultValues="foo" />);
+  const wrapper = mountWrapper(
+    defaultStore,
+    <OperatorInstanceFormBody {...defaultProps} defaultValues="foo" />,
+  );
   expect(wrapper.find(AdvancedDeploymentForm).prop("appValues")).toBe("foo");
 });
 
 it("restores the default values", async () => {
-  const wrapper = mount(<OperatorInstanceFormBody {...defaultProps} defaultValues="foo" />);
+  const wrapper = mountWrapper(
+    defaultStore,
+    <OperatorInstanceFormBody {...defaultProps} defaultValues="foo" />,
+  );
 
   act(() => {
     (wrapper.find(AdvancedDeploymentForm).prop("handleValuesChange") as any)("not-foo");
@@ -50,7 +57,10 @@ it("restores the default values", async () => {
 
 it("should submit the form", () => {
   const handleDeploy = jest.fn();
-  const wrapper = mount(<OperatorInstanceFormBody {...defaultProps} handleDeploy={handleDeploy} />);
+  const wrapper = mountWrapper(
+    defaultStore,
+    <OperatorInstanceFormBody {...defaultProps} handleDeploy={handleDeploy} />,
+  );
 
   const values = "apiVersion: v1\nmetadata:\n  name: foo";
   act(() => {
@@ -70,7 +80,10 @@ it("should submit the form", () => {
 
 it("should catch a syntax error in the form", () => {
   const handleDeploy = jest.fn();
-  const wrapper = mount(<OperatorInstanceFormBody {...defaultProps} handleDeploy={handleDeploy} />);
+  const wrapper = mountWrapper(
+    defaultStore,
+    <OperatorInstanceFormBody {...defaultProps} handleDeploy={handleDeploy} />,
+  );
 
   const values = "metadata: invalid!\n  name: foo";
   act(() => {
@@ -85,7 +98,10 @@ it("should catch a syntax error in the form", () => {
 
 it("should throw an eror if the element doesn't contain an apiVersion", () => {
   const handleDeploy = jest.fn();
-  const wrapper = mount(<OperatorInstanceFormBody {...defaultProps} handleDeploy={handleDeploy} />);
+  const wrapper = mountWrapper(
+    defaultStore,
+    <OperatorInstanceFormBody {...defaultProps} handleDeploy={handleDeploy} />,
+  );
 
   const values = "metadata:\nname: foo";
   act(() => {

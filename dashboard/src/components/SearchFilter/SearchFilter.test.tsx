@@ -1,5 +1,4 @@
 import { shallow } from "enzyme";
-import * as React from "react";
 import Input from "../js/Input";
 import SearchFilter, { ISearchFilterProps } from "./SearchFilter";
 
@@ -26,7 +25,7 @@ it("changes the filter", () => {
   expect(onChange).toHaveBeenCalledWith("foo");
 });
 
-it("should render a PageHeader", () => {
+it("should render a PageHeader (onSubmit)", () => {
   const onSubmit = jest.fn();
   const wrapper = shallow(<SearchFilter {...defaultProps} value="test" submitFilters={onSubmit} />);
   wrapper.find("form").simulate("submit", { preventDefault: jest.fn() });

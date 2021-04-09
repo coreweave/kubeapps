@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 
 import Alert from "components/js/Alert";
 import { RouterAction } from "connected-react-router";
@@ -100,7 +100,13 @@ function AppUpgrade({
   }
 
   if (appsIsFetching || !app || !app.updateInfo) {
-    return <LoadingWrapper loaded={false} />;
+    return (
+      <LoadingWrapper
+        loadingText={`Fetching ${releaseName}...`}
+        className="margin-t-xxl"
+        loaded={false}
+      />
+    );
   }
 
   const appRepoName = repoName || app.updateInfo.repository.name;
@@ -129,7 +135,7 @@ function AppUpgrade({
       </div>
     );
   }
-
+  /* eslint-disable @typescript-eslint/no-non-null-asserted-optional-chain */
   return (
     <SelectRepoForm cluster={cluster} namespace={namespace} chartName={chart?.metadata?.name!} />
   );
