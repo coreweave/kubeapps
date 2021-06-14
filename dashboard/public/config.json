@@ -2,8 +2,8 @@
   "kubeappsCluster": "default",
   "kubeappsNamespace": "kubeapps",
   "appVersion": "DEVEL",
-  "authProxyEnabled": false,
-  "authProxySkipLoginPage": false,
+  "authProxyEnabled": true,
+  "authProxySkipLoginPage": true,
   "oauthLoginURI": "/oauth2/start",
   "oauthLogoutURI": "/oauth2/sign_out",
   "clusters": ["default"]
