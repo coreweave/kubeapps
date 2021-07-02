@@ -437,6 +437,7 @@ export type IAppRepository = IK8sObject<
   {
     type: string;
     url: string;
+    description?: string;
     auth?: {
       header?: {
         secretKeyRef: {
@@ -457,6 +458,7 @@ export type IAppRepository = IK8sObject<
     ociRepositories?: string[];
     tlsInsecureSkipVerify?: boolean;
     filterRule?: IAppRepositoryFilter;
+    passCredentials?: boolean;
   },
   undefined
 >;

@@ -17,13 +17,17 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"time"
 
 	"github.com/kubeapps/common/datastore"
 	"github.com/kubeapps/kubeapps/pkg/chart/models"
+	httpclient "github.com/kubeapps/kubeapps/pkg/http-client"
+	"github.com/kubeapps/kubeapps/pkg/kube"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"k8s.io/kubernetes/pkg/credentialprovider"
 )
 
 var syncCmd = &cobra.Command{
@@ -52,12 +56,21 @@ var syncCmd = &cobra.Command{
 		}
 		defer manager.Close()
 
-		netClient, err := initNetClient(additionalCAFile, tlsInsecureSkipVerify)
+		netClient, err := httpclient.NewWithCertFile(additionalCAFile, tlsInsecureSkipVerify)
 		if err != nil {
 			logrus.Fatal(err)
 		}
 
 		authorizationHeader := os.Getenv("AUTHORIZATION_HEADER")
+		// The auth header may be a dockerconfig that we need to parse
+		if os.Getenv("DOCKER_CONFIG_JSON") != "" {
+			dockerConfig := &credentialprovider.DockerConfigJSON{}
+			err = json.Unmarshal([]byte(os.Getenv("DOCKER_CONFIG_JSON")), dockerConfig)
+			if err != nil {
+				logrus.Fatal(err)
+			}
+			authorizationHeader, err = kube.GetAuthHeaderFromDockerConfig(dockerConfig)
+		}
 
 		filters, err := parseFilters(filterRules)
 		if err != nil {
@@ -80,23 +93,37 @@ var syncCmd = &cobra.Command{
 		}
 
 		// Check if the repo has been already processed
-		if manager.RepoAlreadyProcessed(models.Repo{Namespace: repo.Namespace, Name: repo.Name}, checksum) {
+		lastChecksum := manager.LastChecksum(models.Repo{Namespace: repo.Namespace, Name: repo.Name})
+		logrus.Infof("Last checksum: %v", lastChecksum)
+		if lastChecksum == checksum {
 			logrus.WithFields(logrus.Fields{"url": repo.URL}).Info("Skipping repository since there are no updates")
 			return
 		}
 
-		charts, err := repoIface.Charts()
-		if err != nil {
-			logrus.Fatal(err)
+		// First filter the list of charts (still without applying custom filters)
+		repoIface.FilterIndex()
+
+		fetchLatestOnlySlice := []bool{false}
+		if lastChecksum == "" {
+			// If the repo has never been processed, run first a shallow sync to give early feedback
+			// then sync all the repositories
+			fetchLatestOnlySlice = []bool{true, false}
 		}
 
-		if err = manager.Sync(models.Repo{Name: repo.Name, Namespace: repo.Namespace}, charts); err != nil {
-			logrus.Fatalf("Can't add chart repository to database: %v", err)
-		}
+		for _, fetchLatestOnly := range fetchLatestOnlySlice {
+			charts, err := repoIface.Charts(fetchLatestOnly)
+			if err != nil {
+				logrus.Fatal(err)
+			}
+			if err = manager.Sync(models.Repo{Name: repo.Name, Namespace: repo.Namespace}, charts); err != nil {
+				logrus.Fatalf("Can't add chart repository to database: %v", err)
+			}
 
-		// Fetch and store chart icons
-		fImporter := fileImporter{manager, netClient}
-		fImporter.fetchFiles(charts, repoIface)
+			// Fetch and store chart icons
+			fImporter := fileImporter{manager, netClient}
+			fImporter.fetchFiles(charts, repoIface)
+			logrus.WithFields(logrus.Fields{"shallow": fetchLatestOnly}).Info("Repository synced")
+		}
 
 		// Update cache in the database
 		if err = manager.UpdateLastCheck(repo.Namespace, repo.Name, checksum, time.Now()); err != nil {

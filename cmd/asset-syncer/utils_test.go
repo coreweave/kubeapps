@@ -17,15 +17,12 @@ limitations under the License.
 package main
 
 import (
-	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"image"
 	"image/color"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -41,16 +38,17 @@ import (
 	"github.com/kubeapps/common/datastore"
 	apprepov1alpha1 "github.com/kubeapps/kubeapps/cmd/apprepository-controller/pkg/apis/apprepository/v1alpha1"
 	"github.com/kubeapps/kubeapps/pkg/chart/models"
+	"github.com/kubeapps/kubeapps/pkg/helm"
 	helmfake "github.com/kubeapps/kubeapps/pkg/helm/fake"
 	helmtest "github.com/kubeapps/kubeapps/pkg/helm/test"
+	httpclient "github.com/kubeapps/kubeapps/pkg/http-client"
+	tartest "github.com/kubeapps/kubeapps/pkg/tarutil/test"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/helm/pkg/proto/hapi/chart"
 )
 
 var validRepoIndexYAMLBytes, _ = ioutil.ReadFile("testdata/valid-index.yaml")
 var validRepoIndexYAML = string(validRepoIndexYAMLBytes)
-
-var invalidRepoIndexYAML = "invalid"
 
 type badHTTPClient struct {
 	errMsg string
@@ -80,6 +78,24 @@ func (h *goodHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	w.Write([]byte(validRepoIndexYAML))
+	return w.Result(), nil
+}
+
+type goodAuthenticatedHTTPClient struct{}
+
+func (h *goodAuthenticatedHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	w := httptest.NewRecorder()
+
+	// Ensure we're sending an Authorization header
+	if req.Header.Get("Authorization") == "" {
+		w.WriteHeader(401)
+	}
+	// Ensure we're sending the right Authorization header
+	if !strings.Contains(req.Header.Get("Authorization"), "Bearer ThisSecretAccessTokenAuthenticatesTheClient") {
+		w.WriteHeader(403)
+	}
+
+	w.Write(iconBytes())
 	return w.Result(), nil
 }
 
@@ -127,7 +143,7 @@ type svgIconClient struct{}
 
 func (h *svgIconClient) Do(req *http.Request) (*http.Response, error) {
 	w := httptest.NewRecorder()
-	w.Write([]byte("foo"))
+	w.Write([]byte("<svg width='100' height='100'></svg>"))
 	res := w.Result()
 	res.Header.Set("Content-Type", "image/svg")
 	return res, nil
@@ -147,17 +163,17 @@ var testChartSchema = `{"properties": {}}`
 func (h *goodTarballClient) Do(req *http.Request) (*http.Response, error) {
 	w := httptest.NewRecorder()
 	gzw := gzip.NewWriter(w)
-	files := []tarballFile{{h.c.Name + "/Chart.yaml", "should be a Chart.yaml here..."}}
+	files := []tartest.TarballFile{{Name: h.c.Name + "/Chart.yaml", Body: "should be a Chart.yaml here..."}}
 	if !h.skipValues {
-		files = append(files, tarballFile{h.c.Name + "/values.yaml", testChartValues})
+		files = append(files, tartest.TarballFile{Name: h.c.Name + "/values.yaml", Body: testChartValues})
 	}
 	if !h.skipReadme {
-		files = append(files, tarballFile{h.c.Name + "/README.md", testChartReadme})
+		files = append(files, tartest.TarballFile{Name: h.c.Name + "/README.md", Body: testChartReadme})
 	}
 	if !h.skipSchema {
-		files = append(files, tarballFile{h.c.Name + "/values.schema.json", testChartSchema})
+		files = append(files, tartest.TarballFile{Name: h.c.Name + "/values.schema.json", Body: testChartSchema})
 	}
-	createTestTarball(gzw, files)
+	tartest.CreateTestTarball(gzw, files)
 	gzw.Flush()
 	return w.Result(), nil
 }
@@ -174,11 +190,11 @@ func (h *authenticatedTarballClient) Do(req *http.Request) (*http.Response, erro
 		w.WriteHeader(500)
 	} else {
 		gzw := gzip.NewWriter(w)
-		files := []tarballFile{{h.c.Name + "/Chart.yaml", "should be a Chart.yaml here..."}}
-		files = append(files, tarballFile{h.c.Name + "/values.yaml", testChartValues})
-		files = append(files, tarballFile{h.c.Name + "/README.md", testChartReadme})
-		files = append(files, tarballFile{h.c.Name + "/values.schema.json", testChartSchema})
-		createTestTarball(gzw, files)
+		files := []tartest.TarballFile{{Name: h.c.Name + "/Chart.yaml", Body: "should be a Chart.yaml here..."}}
+		files = append(files, tartest.TarballFile{Name: h.c.Name + "/values.yaml", Body: testChartValues})
+		files = append(files, tartest.TarballFile{Name: h.c.Name + "/README.md", Body: testChartReadme})
+		files = append(files, tartest.TarballFile{Name: h.c.Name + "/values.schema.json", Body: testChartSchema})
+		tartest.CreateTestTarball(gzw, files)
 		gzw.Flush()
 	}
 	return w.Result(), nil
@@ -289,55 +305,6 @@ func Test_fetchRepoIndexUserAgent(t *testing.T) {
 	}
 }
 
-func Test_parseRepoIndex(t *testing.T) {
-	tests := []struct {
-		name     string
-		repoYAML string
-	}{
-		{"invalid", "invalid"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseRepoIndex([]byte(tt.repoYAML))
-			assert.ExistsErr(t, err, tt.name)
-		})
-	}
-
-	t.Run("valid", func(t *testing.T) {
-		index, err := parseRepoIndex([]byte(validRepoIndexYAML))
-		assert.NoErr(t, err)
-		assert.Equal(t, len(index.Entries), 2, "number of charts")
-		assert.Equal(t, index.Entries["acs-engine-autoscaler"][0].GetName(), "acs-engine-autoscaler", "chart version populated")
-	})
-}
-
-func Test_chartsFromIndex(t *testing.T) {
-	r := &models.Repo{Name: "test", URL: "http://testrepo.com"}
-	index, _ := parseRepoIndex([]byte(validRepoIndexYAML))
-	charts := chartsFromIndex(index, r)
-	assert.Equal(t, len(charts), 2, "number of charts")
-
-	indexWithDeprecated := validRepoIndexYAML + `
-  deprecated-chart:
-  - name: deprecated-chart
-    deprecated: true`
-	index2, err := parseRepoIndex([]byte(indexWithDeprecated))
-	assert.NoErr(t, err)
-	charts = chartsFromIndex(index2, r)
-	assert.Equal(t, len(charts), 2, "number of charts")
-}
-
-func Test_newChart(t *testing.T) {
-	r := &models.Repo{Name: "test", URL: "http://testrepo.com"}
-	index, _ := parseRepoIndex([]byte(validRepoIndexYAML))
-	c := newChart(index.Entries["wordpress"], r)
-	assert.Equal(t, c.Name, "wordpress", "correctly built")
-	assert.Equal(t, len(c.ChartVersions), 2, "correctly built")
-	assert.Equal(t, c.Description, "new description!", "takes chart fields from latest entry")
-	assert.Equal(t, c.Repo, r, "repo set")
-	assert.Equal(t, c.ID, "test/wordpress", "id set")
-}
-
 func Test_chartTarballURL(t *testing.T) {
 	r := &models.RepoInternal{Name: "test", URL: "http://testrepo.com"}
 	tests := []struct {
@@ -353,95 +320,6 @@ func Test_chartTarballURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, chartTarballURL(r, tt.cv), tt.wanted, "url")
 		})
-	}
-}
-
-func Test_extractFilesFromTarball(t *testing.T) {
-	tests := []struct {
-		name     string
-		files    []tarballFile
-		filename string
-		want     string
-	}{
-		{"file", []tarballFile{{"file.txt", "best file ever"}}, "file.txt", "best file ever"},
-		{"multiple file tarball", []tarballFile{{"file.txt", "best file ever"}, {"file2.txt", "worst file ever"}}, "file2.txt", "worst file ever"},
-		{"file in dir", []tarballFile{{"file.txt", "best file ever"}, {"test/file2.txt", "worst file ever"}}, "test/file2.txt", "worst file ever"},
-		{"filename ignore case", []tarballFile{{"Readme.md", "# readme for chart"}, {"values.yaml", "key: value"}}, "README.md", "# readme for chart"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var b bytes.Buffer
-			createTestTarball(&b, tt.files)
-			r := bytes.NewReader(b.Bytes())
-			tarf := tar.NewReader(r)
-			files, err := extractFilesFromTarball(map[string]string{tt.filename: tt.filename}, tarf)
-			assert.NoErr(t, err)
-			assert.Equal(t, files[tt.filename], tt.want, "file body")
-		})
-	}
-
-	t.Run("extract multiple files", func(t *testing.T) {
-		var b bytes.Buffer
-		tFiles := []tarballFile{{"file.txt", "best file ever"}, {"file2.txt", "worst file ever"}}
-		createTestTarball(&b, tFiles)
-		r := bytes.NewReader(b.Bytes())
-		tarf := tar.NewReader(r)
-		files, err := extractFilesFromTarball(map[string]string{tFiles[0].Name: tFiles[0].Name, tFiles[1].Name: tFiles[1].Name}, tarf)
-		assert.NoErr(t, err)
-		assert.Equal(t, len(files), 2, "matches")
-		for _, f := range tFiles {
-			assert.Equal(t, files[f.Name], f.Body, "file body")
-		}
-	})
-
-	t.Run("file not found", func(t *testing.T) {
-		var b bytes.Buffer
-		createTestTarball(&b, []tarballFile{{"file.txt", "best file ever"}})
-		r := bytes.NewReader(b.Bytes())
-		tarf := tar.NewReader(r)
-		name := "file2.txt"
-		files, err := extractFilesFromTarball(map[string]string{name: name}, tarf)
-		assert.NoErr(t, err)
-		assert.Equal(t, files[name], "", "file body")
-	})
-
-	t.Run("not a tarball", func(t *testing.T) {
-		b := make([]byte, 4)
-		rand.Read(b)
-		r := bytes.NewReader(b)
-		tarf := tar.NewReader(r)
-		files, err := extractFilesFromTarball(map[string]string{values: "file2.txt"}, tarf)
-		assert.Err(t, io.ErrUnexpectedEOF, err)
-		assert.Equal(t, len(files), 0, "file body")
-	})
-}
-
-type tarballFile struct {
-	Name, Body string
-}
-
-func createTestTarball(w io.Writer, files []tarballFile) {
-	// Create a new tar archive.
-	tarw := tar.NewWriter(w)
-
-	// Add files to the archive.
-	for _, file := range files {
-		hdr := &tar.Header{
-			Name: file.Name,
-			Mode: 0600,
-			Size: int64(len(file.Body)),
-		}
-		if err := tarw.WriteHeader(hdr); err != nil {
-			log.Fatalln(err)
-		}
-		if _, err := tarw.Write([]byte(file.Body)); err != nil {
-			log.Fatalln(err)
-		}
-	}
-	// Make sure to check the error on Close.
-	if err := tarw.Close(); err != nil {
-		log.Fatal(err)
 	}
 }
 
@@ -478,21 +356,10 @@ h251U/Daz6NiQBM9AxyAw6EHm8XAZBvCuebfzyrT
 		t.Error(err)
 	}
 
-	_, err = initNetClient(otherCA, false)
+	_, err = httpclient.NewWithCertFile(otherCA, false)
 	if err != nil {
 		t.Error(err)
 	}
-}
-
-var emptyRepoIndexYAMLBytes, _ = ioutil.ReadFile("testdata/empty-repo-index.yaml")
-var emptyRepoIndexYAML = string(emptyRepoIndexYAMLBytes)
-
-type emptyChartRepoHTTPClient struct{}
-
-func (h *emptyChartRepoHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	w := httptest.NewRecorder()
-	w.Write([]byte(emptyRepoIndexYAML))
-	return w.Result(), nil
 }
 
 func Test_getSha256(t *testing.T) {
@@ -524,6 +391,8 @@ func Test_newManager(t *testing.T) {
 
 func Test_fetchAndImportIcon(t *testing.T) {
 	repo := &models.RepoInternal{Name: "test", Namespace: "repo-namespace"}
+	repoWithAuthorization := &models.RepoInternal{Name: "test", Namespace: "repo-namespace", AuthorizationHeader: "Bearer ThisSecretAccessTokenAuthenticatesTheClient", URL: "https://github.com/"}
+
 	t.Run("no icon", func(t *testing.T) {
 		pgManager, _, cleanup := getMockManager(t)
 		defer cleanup()
@@ -532,8 +401,7 @@ func Test_fetchAndImportIcon(t *testing.T) {
 		assert.NoErr(t, fImporter.fetchAndImportIcon(c, repo))
 	})
 
-	index, _ := parseRepoIndex([]byte(validRepoIndexYAML))
-	charts := chartsFromIndex(index, &models.Repo{Name: "test", Namespace: "repo-namespace", URL: "http://testrepo.com"})
+	charts, _ := helm.ChartsFromIndex([]byte(validRepoIndexYAML), &models.Repo{Name: "test", Namespace: "repo-namespace", URL: "http://testrepo.com"}, false)
 
 	t.Run("failed download", func(t *testing.T) {
 		pgManager, _, cleanup := getMockManager(t)
@@ -582,6 +450,52 @@ func Test_fetchAndImportIcon(t *testing.T) {
 		fImporter := fileImporter{pgManager, netClient}
 		assert.NoErr(t, fImporter.fetchAndImportIcon(c, repo))
 	})
+
+	t.Run("valid icon (not passing through the auth header by default)", func(t *testing.T) {
+		pgManager, _, cleanup := getMockManager(t)
+		defer cleanup()
+		netClient := &goodAuthenticatedHTTPClient{}
+
+		fImporter := fileImporter{pgManager, netClient}
+		assert.Err(t, fmt.Errorf("401 %s", charts[0].Icon), fImporter.fetchAndImportIcon(charts[0], repo))
+	})
+
+	t.Run("valid icon (not passing through the auth header)", func(t *testing.T) {
+		pgManager, _, cleanup := getMockManager(t)
+		defer cleanup()
+		netClient := &goodAuthenticatedHTTPClient{}
+
+		fImporter := fileImporter{pgManager, netClient}
+		passCredentials = false
+		assert.Err(t, fmt.Errorf("401 %s", charts[0].Icon), fImporter.fetchAndImportIcon(charts[0], repo))
+	})
+
+	t.Run("valid icon (passing through the auth header if same domain)", func(t *testing.T) {
+		pgManager, mock, cleanup := getMockManager(t)
+		defer cleanup()
+		netClient := &goodAuthenticatedHTTPClient{}
+
+		mock.ExpectQuery("UPDATE charts SET info *").
+			WithArgs("test/acs-engine-autoscaler", "repo-namespace", "test").
+			WillReturnRows(sqlmock.NewRows([]string{"ID"}).AddRow(1))
+
+		fImporter := fileImporter{pgManager, netClient}
+		assert.NoErr(t, fImporter.fetchAndImportIcon(charts[0], repoWithAuthorization))
+	})
+
+	t.Run("valid icon (passing through the auth header)", func(t *testing.T) {
+		pgManager, mock, cleanup := getMockManager(t)
+		defer cleanup()
+		netClient := &goodAuthenticatedHTTPClient{}
+
+		mock.ExpectQuery("UPDATE charts SET info *").
+			WithArgs("test/acs-engine-autoscaler", "repo-namespace", "test").
+			WillReturnRows(sqlmock.NewRows([]string{"ID"}).AddRow(1))
+
+		fImporter := fileImporter{pgManager, netClient}
+		passCredentials = true
+		assert.NoErr(t, fImporter.fetchAndImportIcon(charts[0], repoWithAuthorization))
+	})
 }
 
 type fakeRepo struct {
@@ -598,22 +512,25 @@ func (r *fakeRepo) Repo() *models.RepoInternal {
 	return r.RepoInternal
 }
 
-func (r *fakeRepo) Charts() ([]models.Chart, error) {
+func (r *fakeRepo) FilterIndex() {
+	// no-op
+}
+
+func (r *fakeRepo) Charts(shallow bool) ([]models.Chart, error) {
 	return r.charts, nil
 }
 
 func (r *fakeRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]string, error) {
 	return map[string]string{
-		values: r.chartFiles.Values,
-		readme: r.chartFiles.Readme,
-		schema: r.chartFiles.Schema,
+		models.ValuesKey: r.chartFiles.Values,
+		models.ReadmeKey: r.chartFiles.Readme,
+		models.SchemaKey: r.chartFiles.Schema,
 	}, nil
 }
 
 func Test_fetchAndImportFiles(t *testing.T) {
-	index, _ := parseRepoIndex([]byte(validRepoIndexYAML))
 	repo := &models.RepoInternal{Name: "test", Namespace: "repo-namespace", URL: "http://testrepo.com"}
-	charts := chartsFromIndex(index, &models.Repo{Name: repo.Name, Namespace: repo.Namespace, URL: repo.URL})
+	charts, _ := helm.ChartsFromIndex([]byte(validRepoIndexYAML), &models.Repo{Name: repo.Name, Namespace: repo.Namespace, URL: repo.URL}, false)
 	chartVersion := charts[0].ChartVersions[0]
 	chartID := fmt.Sprintf("%s/%s", charts[0].Repo.Name, charts[0].Name)
 	chartFilesID := fmt.Sprintf("%s-%s", chartID, chartVersion.Version)
@@ -645,7 +562,7 @@ func Test_fetchAndImportFiles(t *testing.T) {
 			RepoInternal: repo,
 			netClient:    netClient,
 		}
-		assert.Err(t, io.EOF, fImporter.fetchAndImportFiles(charts[0].Name, helmRepo, chartVersion))
+		assert.Err(t, fmt.Errorf("received non OK response code: [500]"), fImporter.fetchAndImportFiles(charts[0].Name, helmRepo, chartVersion))
 	})
 
 	t.Run("file not found", func(t *testing.T) {
@@ -915,6 +832,23 @@ func Test_OCIRegistry(t *testing.T) {
 		}, "expected tags")
 	})
 
+	t.Run("FilterIndex - order tags by semver", func(t *testing.T) {
+		repo := OCIRegistry{
+			repositories: []string{"apache"},
+			RepoInternal: &models.RepoInternal{
+				URL: "http://oci-test",
+			},
+			tags: map[string]TagList{
+				"apache": {Name: "test/apache", Tags: []string{"1.0.0", "2.0.0", "1.1.0"}},
+			},
+			ociCli: &fakeOCIAPICli{},
+		}
+		repo.FilterIndex()
+		assert.Equal(t, repo.tags, map[string]TagList{
+			"apache": {Name: "test/apache", Tags: []string{"2.0.0", "1.1.0", "1.0.0"}},
+		}, "tag list")
+	})
+
 	chartYAML := `
 annotations:
   category: Infrastructure
@@ -936,14 +870,15 @@ version: 1.0.0
 	tests := []struct {
 		description      string
 		chartName        string
-		ociArtifactFiles []tarballFile
+		ociArtifactFiles []tartest.TarballFile
 		tags             []string
 		expected         []models.Chart
+		shallow          bool
 	}{
 		{
 			"Retrieve chart metadata",
 			"kubeapps",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "Chart.yaml", Body: chartYAML},
 			},
 			[]string{"1.0.0"},
@@ -969,11 +904,12 @@ version: 1.0.0
 					},
 				},
 			},
+			false,
 		},
 		{
 			"Retrieve other files",
 			"kubeapps",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "README.md", Body: "chart readme"},
 				{Name: "values.yaml", Body: "chart values"},
 				{Name: "values.schema.json", Body: "chart schema"},
@@ -995,11 +931,12 @@ version: 1.0.0
 					},
 				},
 			},
+			false,
 		},
 		{
 			"A chart with a /",
 			"repo/kubeapps",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "README.md", Body: "chart readme"},
 				{Name: "values.yaml", Body: "chart values"},
 				{Name: "values.schema.json", Body: "chart schema"},
@@ -1021,11 +958,12 @@ version: 1.0.0
 					},
 				},
 			},
+			false,
 		},
 		{
 			"Multiple chart versions",
 			"repo/kubeapps",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "README.md", Body: "chart readme"},
 				{Name: "values.yaml", Body: "chart values"},
 				{Name: "values.schema.json", Body: "chart schema"},
@@ -1053,6 +991,34 @@ version: 1.0.0
 					},
 				},
 			},
+			false,
+		},
+		{
+			"Single chart version for a shallow run",
+			"repo/kubeapps",
+			[]tartest.TarballFile{
+				{Name: "README.md", Body: "chart readme"},
+				{Name: "values.yaml", Body: "chart values"},
+				{Name: "values.schema.json", Body: "chart schema"},
+			},
+			[]string{"1.1.0", "1.0.0"},
+			[]models.Chart{
+				{
+					ID:          "test/repo%2Fkubeapps",
+					Name:        "repo%2Fkubeapps",
+					Repo:        &models.Repo{Name: "test", URL: "http://oci-test/"},
+					Maintainers: []chart.Maintainer{},
+					ChartVersions: []models.ChartVersion{
+						{
+							Digest: "123",
+							Readme: "chart readme",
+							Values: "chart values",
+							Schema: "chart schema",
+						},
+					},
+				},
+			},
+			true,
 		},
 	}
 	for _, tt := range tests {
@@ -1063,7 +1029,7 @@ version: 1.0.0
 			for _, tag := range tt.tags {
 				recorder := httptest.NewRecorder()
 				gzw := gzip.NewWriter(recorder)
-				createTestTarball(gzw, tt.ociArtifactFiles)
+				tartest.CreateTestTarball(gzw, tt.ociArtifactFiles)
 				gzw.Flush()
 				w[tag] = recorder
 				content[tag] = recorder.Body
@@ -1091,7 +1057,7 @@ version: 1.0.0
 					},
 				},
 			}
-			charts, err := chartsRepo.Charts()
+			charts, err := chartsRepo.Charts(tt.shallow)
 			assert.NoErr(t, err)
 			if !cmp.Equal(charts, tt.expected) {
 				t.Errorf("Unexpected result %v", cmp.Diff(charts, tt.expected))
@@ -1101,9 +1067,9 @@ version: 1.0.0
 
 	t.Run("FetchFiles - It returns the stored files", func(t *testing.T) {
 		files := map[string]string{
-			values: "values text",
-			readme: "readme text",
-			schema: "schema text",
+			models.ValuesKey: "values text",
+			models.ReadmeKey: "readme text",
+			models.SchemaKey: "schema text",
 		}
 		repo := OCIRegistry{}
 		result, err := repo.FetchFiles("", models.ChartVersion{
@@ -1119,12 +1085,12 @@ version: 1.0.0
 func Test_extractFilesFromBuffer(t *testing.T) {
 	tests := []struct {
 		description string
-		files       []tarballFile
+		files       []tartest.TarballFile
 		expected    *artifactFiles
 	}{
 		{
 			"It should extract the important files",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "Chart.yaml", Body: "chart yaml"},
 				{Name: "README.md", Body: "chart readme"},
 				{Name: "values.yaml", Body: "chart values"},
@@ -1139,7 +1105,7 @@ func Test_extractFilesFromBuffer(t *testing.T) {
 		},
 		{
 			"It should ignore letter case",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "Readme.md", Body: "chart readme"},
 			},
 			&artifactFiles{
@@ -1148,7 +1114,7 @@ func Test_extractFilesFromBuffer(t *testing.T) {
 		},
 		{
 			"It should ignore other files",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "README.md", Body: "chart readme"},
 				{Name: "other.yaml", Body: "other content"},
 			},
@@ -1158,7 +1124,7 @@ func Test_extractFilesFromBuffer(t *testing.T) {
 		},
 		{
 			"It should handle large files",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				// 1MB file
 				{Name: "README.md", Body: string(make([]byte, 1048577))},
 			},
@@ -1168,7 +1134,7 @@ func Test_extractFilesFromBuffer(t *testing.T) {
 		},
 		{
 			"It should ignore nested files",
-			[]tarballFile{
+			[]tartest.TarballFile{
 				{Name: "other/README.md", Body: "bad"},
 				{Name: "README.md", Body: "good"},
 			},
@@ -1181,7 +1147,7 @@ func Test_extractFilesFromBuffer(t *testing.T) {
 		t.Run(tt.description, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			gzw := gzip.NewWriter(w)
-			createTestTarball(gzw, tt.files)
+			tartest.CreateTestTarball(gzw, tt.files)
 			gzw.Flush()
 
 			r, err := extractFilesFromBuffer(w.Body)
@@ -1329,6 +1295,98 @@ func Test_filterCharts(t *testing.T) {
 					t.Fatalf("Unexpected error %v", err)
 				}
 			}
+			if !cmp.Equal(res, tt.expected) {
+				t.Errorf("Unexpected result: %v", cmp.Diff(res, tt.expected))
+			}
+		})
+	}
+}
+
+func Test_isURLDomainEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		url1     string
+		url2     string
+		expected bool
+	}{
+		{
+			"it returns false if a url is malformed",
+			"abc",
+			"https://bitnami.com/assets/stacks/airflow/img/airflow-stack-220x234.png",
+			false,
+		},
+		{
+			"it returns false if they are under different subdomains",
+			"https://bitnami.com/bitnami/index.yaml",
+			"https://charts.bitnami.com/assets/stacks/airflow/img/airflow-stack-220x234.png",
+			false,
+		},
+		{
+			"it returns false if they are under the same domain but using different schema",
+			"http://charts.bitnami.com/bitnami/airflow-10.2.0.tgz",
+			"https://charts.bitnami.com/assets/stacks/airflow/img/airflow-stack-220x234.png",
+			false,
+		},
+		{
+			"it returns false if attempting a CRLF injection",
+			"https://charts.bitnami.com",
+			"https://charts.bitnami.com%0A%0Ddevil.com",
+			false,
+		},
+		{
+			"it returns false if attempting a SSRF",
+			"https://ⓖⓞⓞⓖⓛⓔ.com",
+			"https://google.com",
+			false,
+		},
+		{
+			"it returns false if attempting a SSRF",
+			"https://wordpress.com",
+			"https://wordpreß.com",
+			false,
+		},
+		{
+			"it returns false if attempting a SSRF",
+			"http://foo@127.0.0.1 @bitnami.com:11211/",
+			"https://127.0.0.1:11211",
+			false,
+		},
+		{
+			"it returns false if attempting a SSRF",
+			"https://foo@evil.com@charts.bitnami.com",
+			"https://evil.com",
+			false,
+			// should be careful, curl would send a request to evil.com
+			// but the go net/url parser detects charts.bitnami.com
+		},
+		{
+			"it returns false if attempting a SSRF",
+			"https://charts.bitnami.com#@evil.com",
+			"https://charts.bitnami.com",
+			false,
+		},
+		{
+			"it returns true if they are under the same domain",
+			"https://charts.bitnami.com/bitnami/airflow-10.2.0.tgz",
+			"https://charts.bitnami.com/assets/stacks/airflow/img/airflow-stack-220x234.png",
+			true,
+		},
+		{
+			"it returns false if they are under the same domain but different ports",
+			"https://charts.bitnami.com:8080/bitnami/airflow-10.2.0.tgz",
+			"https://charts.bitnami.com/assets/stacks/airflow/img/airflow-stack-220x234.png",
+			false,
+		},
+		{
+			"it returns true if they are under the same domain",
+			"https://charts.bitnami.com/bitnami/airflow-10.2.0.tgz",
+			"https://charts.bitnami.com/assets/stacks/airflow/img/airflow-stack-220x234.png",
+			true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := isURLDomainEqual(tt.url1, tt.url2)
 			if !cmp.Equal(res, tt.expected) {
 				t.Errorf("Unexpected result: %v", cmp.Diff(res, tt.expected))
 			}

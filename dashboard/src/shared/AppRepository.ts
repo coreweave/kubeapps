@@ -30,6 +30,7 @@ export class AppRepository {
     namespace: string,
     repoURL: string,
     type: string,
+    description: string,
     authHeader: string,
     authRegCreds: string,
     customCA: string,
@@ -37,6 +38,7 @@ export class AppRepository {
     registrySecrets: string[],
     ociRepositories: string[],
     skipTLS: boolean,
+    passCredentials: boolean,
     filter?: IAppRepositoryFilter,
   ) {
     const { data } = await axiosWithAuth.put<ICreateAppRepositoryResponse>(
@@ -46,6 +48,7 @@ export class AppRepository {
           name,
           repoURL,
           type,
+          description,
           authHeader,
           authRegCreds,
           customCA,
@@ -53,6 +56,7 @@ export class AppRepository {
           registrySecrets,
           ociRepositories,
           tlsInsecureSkipVerify: skipTLS,
+          passCredentials: passCredentials,
           filter,
         },
       },
@@ -76,6 +80,7 @@ export class AppRepository {
     namespace: string,
     repoURL: string,
     type: string,
+    description: string,
     authHeader: string,
     authRegCreds: string,
     customCA: string,
@@ -83,6 +88,7 @@ export class AppRepository {
     registrySecrets: string[],
     ociRepositories: string[],
     skipTLS: boolean,
+    passCredentials: boolean,
     filter?: IAppRepositoryFilter,
   ) {
     const { data } = await axiosWithAuth.post<ICreateAppRepositoryResponse>(
@@ -94,11 +100,13 @@ export class AppRepository {
           authHeader,
           authRegCreds,
           type,
+          description,
           customCA,
           syncJobPodTemplate,
           registrySecrets,
           ociRepositories,
           tlsInsecureSkipVerify: skipTLS,
+          passCredentials: passCredentials,
           filterRule: filter,
         },
       },
@@ -108,6 +116,7 @@ export class AppRepository {
 
   public static async validate(
     cluster: string,
+    namespace: string,
     repoURL: string,
     type: string,
     authHeader: string,
@@ -115,18 +124,23 @@ export class AppRepository {
     customCA: string,
     ociRepositories: string[],
     skipTLS: boolean,
+    passCredentials: boolean,
   ) {
-    const { data } = await axiosWithAuth.post<any>(url.backend.apprepositories.validate(cluster), {
-      appRepository: {
-        repoURL,
-        type,
-        authHeader,
-        authRegCreds,
-        customCA,
-        ociRepositories,
-        tlsInsecureSkipVerify: skipTLS,
+    const { data } = await axiosWithAuth.post<any>(
+      url.backend.apprepositories.validate(cluster, namespace),
+      {
+        appRepository: {
+          repoURL,
+          type,
+          authHeader,
+          authRegCreds,
+          customCA,
+          ociRepositories,
+          tlsInsecureSkipVerify: skipTLS,
+          passCredentials: passCredentials,
+        },
       },
-    });
+    );
     return data;
   }
 

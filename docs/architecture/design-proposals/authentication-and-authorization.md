@@ -21,18 +21,18 @@ As described above, this is a solved problem in Kubernetes through the use of Ku
 
 ## Goals and Non-Goals
 
-* Enable using user provided Kubernetes credentials to access Kubernetes APIs from the UI
-* Leverage existing Kubernetes RBAC roles to restrict unauthorized operations, providing a mechanism to restrict operations by namespaces or type (Helm, Kubeless, Service Catalog, etc.)
-* Support the ability to expose Kubeapps externally in a secure way, enabling easier access to Kubeapps without having to install the CLI
-* Avoid introducing a separate way to manage access and authorization to Kubernetes resources (e.g. Kubeapps internal user database)
-* Don't support every possible Kubernetes authentication provider & method
+- Enable using user provided Kubernetes credentials to access Kubernetes APIs from the UI
+- Leverage existing Kubernetes RBAC roles to restrict unauthorized operations, providing a mechanism to restrict operations by namespaces or type (Helm, Kubeless, Service Catalog, etc.)
+- Support the ability to expose Kubeapps externally in a secure way, enabling easier access to Kubeapps without having to install the CLI
+- Avoid introducing a separate way to manage access and authorization to Kubernetes resources (e.g. Kubeapps internal user database)
+- Don't support every possible Kubernetes authentication provider & method
 
 ## User Stories
 
-* As a cluster operator, I want to expose Kubeapps externally but only let authorized users perform certain operations
-* As a member of one engineering team in an organization, I want the ability to deploy and manage applications within my team's namespaces, but I don't want to have access to another team's applications
-* As an SRE, I want to provide my team access to view the state of running applications in the cluster, but I don't want to give out write access to create or delete applications
-* As an SRE, I want to restrict access to provision more expensive service plans from the Service Catalog
+- As a cluster operator, I want to expose Kubeapps externally but only let authorized users perform certain operations
+- As a member of one engineering team in an organization, I want the ability to deploy and manage applications within my team's namespaces, but I don't want to have access to another team's applications
+- As an SRE, I want to provide my team access to view the state of running applications in the cluster, but I don't want to give out write access to create or delete applications
+- As an SRE, I want to restrict access to provision more expensive service plans from the Service Catalog
 
 ## Methods of Authentication
 
@@ -50,7 +50,7 @@ Client certificate and key pairs are a common way to authenticate against a clus
 
 Bearer tokens are passed via the _Authorization_ header in an HTTP request, which makes them very easy to pass in requests from Kubeapps. In order to use Token Authentication for users, a cluster operator will need to configure the API server with a [Token Auth file](https://kubernetes.io/docs/admin/authentication/#static-token-file) that defines user-token pairs.
 
-However, an alternative way to use token authentication is through the use of [Service Accounts](https://kubernetes.io/docs/admin/authentication/#service-account-tokens). These are typically robot accounts for use within Pods, and Kubernetes generates bearer tokens for them to authenticate with the API. Since Service Accounts are enabled by default in most Kubernetes distributions, they can provide for a good way to create and manage user access to Kubeapps. The Kubernetes Dashboard [describes using Service Accounts to create users for the Dashboard in their documentation](https://github.com/kubernetes/dashboard/wiki/Creating-sample-user).
+However, an alternative way to use token authentication is through the use of [Service Accounts](https://kubernetes.io/docs/admin/authentication/#service-account-tokens). These are typically robot accounts for use within Pods, and Kubernetes generates bearer tokens for them to authenticate with the API. Since Service Accounts are enabled by default in most Kubernetes distributions, they can provide for a good way to create and manage user access to Kubeapps. The Kubernetes Dashboard [describes using Service Accounts to create users for the Dashboard in their documentation](../../user/getting-started.md).
 
 Cluster operators can also configure clusters to use [OpenID Connect tokens to authenticate users](https://kubernetes.io/docs/admin/authentication/#openid-connect-tokens). These tokens could be retrieved from OpenID Connect providers such as Azure Active Directory, Salesforce and Google. With this method configured, the ID token returned by one of these providers can be used as a bearer token. As you can see, supporting token authentication in itself provides a plethora of different options for configuring access to Kubernetes and Kubeapps.
 

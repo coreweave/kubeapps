@@ -1,0 +1,412 @@
+syntax = "proto3";
+package kubeappsapis.core.packages.v1alpha1;
+option go_package = "github.com/kubeapps/kubeapps/cmd/kubeapps-apis/gen/core/packages/v1alpha1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/any.proto";
+import "kubeappsapis/core/plugins/v1alpha1/plugins.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// The core.packages defines the request and response types for API calls
+// interacting with packages, as well as the PackagesService to be implemented.
+
+// Each packages v1alpha1 plugin must implement at least the following rpcs:
+//
+service PackagesService {
+  rpc GetAvailablePackageSummaries(GetAvailablePackageSummariesRequest) returns (GetAvailablePackageSummariesResponse) {
+     option (google.api.http) = {
+       get: "/core/packages/v1alpha1/availablepackagesummaries"
+     };
+   }
+  rpc GetAvailablePackageDetail(GetAvailablePackageDetailRequest) returns (GetAvailablePackageDetailResponse) {
+    option (google.api.http) = {
+      get: "/core/packages/v1alpha1/availablepackagedetails"
+    };
+  }
+  rpc GetAvailablePackageVersions(GetAvailablePackageVersionsRequest) returns (GetAvailablePackageVersionsResponse) {
+    option (google.api.http) = {
+      get: "/core/packages/v1alpha1/availablepackageversions"
+    };
+  }
+
+  // TODO: remaining operations yet to be defined
+
+  // rpc GetInstalledPackageSummaries(GetInstalledPackageSummariesRequest) returns (GetInstalledPackageSummariesResponse) {
+  //   option (google.api.http) = {
+  //     get: "/core/packages/v1alpha1/installedpackagesummaries"
+  //   };
+  // }
+  // rpc GetInstalledPackageDetail(GetInstalledPackageDetailRequest) returns (GetInstalledPackageDetailResponse) {
+  //   option (google.api.http) = {
+  //     get: "/core/packages/v1alpha1/installedpackagedetails"
+  //   };
+  // }
+  // rpc CreateInstalledPackage(CreateInstalledPackageRequest) returns (CreateInstalledPackageResponse) {
+  //   option (google.api.http) = {
+  //     post: "/core/packages/v1alpha1/installedpackages"
+  //   };
+  // }
+  // rpc UpdateInstalledPackage(UpdateInstalledPackageRequest) returns (UpdateInstalledPackageResponse) {
+  //   option (google.api.http) = {
+  //     put: "/core/packages/v1alpha1/installedpackages"
+  //   };
+  // }
+  // rpc DeleteInstalledPackage(DeleteInstalledPackageRequest) returns (DeleteInstalledPackageResponse) {
+  //   option (google.api.http) = {
+  //     delete: "/core/packages/v1alpha1/installedpackages"
+  //   };
+  // }
+}
+
+// Standard request and response messages for each required function are defined
+// below for import and re-use.
+
+// -- Start definitions of the request messages --
+
+// GetAvailablePackageSummariesRequest
+//
+// Request for GetAvailablePackageSummaries
+message GetAvailablePackageSummariesRequest {
+  // The context (cluster/namespace) for the request
+  Context context = 1;
+
+  // The filters used for the request
+  FilterOptions filter_options = 2;
+}
+
+// GetAvailablePackageDetailRequest
+//
+// Request for GetAvailablePackageDetail
+message GetAvailablePackageDetailRequest {
+  // The information required to uniquely
+  // identify an available package
+  AvailablePackageReference available_package_ref = 1;
+
+  // Optional specific version (or version reference) to request.
+  // By default the latest version (or latest version matching the reference)
+  // will be returned.
+  string pkg_version = 2;
+}
+
+// GetAvailablePackageVersionsRequest
+//
+// Request for GetAvailablePackageVersions
+message GetAvailablePackageVersionsRequest {
+  // The information required to uniquely
+  // identify an available package
+  AvailablePackageReference available_package_ref = 1;
+
+  // Optional version reference for which version history is required.
+  // By default a summary of versions is returned as outlined in the
+  // response. Plugins can choose not to implement this and provide
+  // the summary only, it is provided for completeness only.
+  string pkg_version = 2;
+}
+
+// -- Start definitions of the response messages --
+
+// GetAvailablePackageSummariesResponse
+//
+// Response for GetAvailablePackageSummaries
+message GetAvailablePackageSummariesResponse {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{"available_packages_summaries": [{}]}'
+  // };
+
+  // Available packages summaries
+  //
+  // List of AvailablePackageSummary
+  repeated AvailablePackageSummary available_packages_summaries = 1;
+}
+
+// GetAvailablePackageDetailResponse
+//
+// Response for GetAvailablePackageDetail
+message GetAvailablePackageDetailResponse {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{"available_package_detail": [{}]}'
+  // };
+
+  // Available package detail
+  //
+  // List of AvailablePackageDetail
+  AvailablePackageDetail available_package_detail = 1;
+}
+
+// GetAvailablePackageVersionsResponse
+//
+// Response for GetAvailablePackageVersions
+message GetAvailablePackageVersionsResponse {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{"package_app_versions": [{}]}'
+  // };
+
+  // PackageAppVersion conveys both the package version and the packaged app version.
+  message PackageAppVersion {
+    string pkg_version = 1;
+    string app_version = 2;
+  };
+  // By default (when version_query is empty or ignored) the response
+  // should contain an ordered summary of versions including the most recent three
+  // patch versions of the most recent three minor versions of the most recent three
+  // major versions when available, something like:
+  // [
+  //   { pkg_version: "10.3.19", app_version: "2.16.8" },
+  //   { pkg_version: "10.3.18", app_version: "2.16.8" },
+  //   { pkg_version: "10.3.17", app_version: "2.16.7" },
+  //   { pkg_version: "10.2.6", app_version: "2.15.3" },
+  //   { pkg_version: "10.2.5", app_version: "2.15.2" },
+  //   { pkg_version: "10.2.4", app_version: "2.15.2" },
+  //   { pkg_version: "10.1.8", app_version: "2.13.5" },
+  //   { pkg_version: "10.1.7", app_version: "2.13.5" },
+  //   { pkg_version: "10.1.6", app_version: "2.13.5" },
+  //   { pkg_version: "9.5.4", app_version: "2.8.9" },
+  //   ...
+  //   { pkg_version: "8.2.5", app_version: "1.19.5" },
+  //   ...
+  // ]
+  // If a version_query is present and the plugin chooses to support it,
+  // the full history of versions matching the version query should be returned.
+  repeated PackageAppVersion package_app_versions = 1;
+}
+
+// -- Start definitions used in the responses  --
+
+// AvailablePackageSummary
+//
+// An AvailablePackageSummary provides a summary of a package available for installation
+// useful when aggregating many available packages.
+message AvailablePackageSummary {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{}'
+  // };
+
+  // Available package reference
+  //
+  // A reference uniquely identifying the package.
+  AvailablePackageReference available_package_ref = 1;
+
+  // Available package name
+  //
+  // The name of the available package
+  string name = 2;
+
+  // Latest available package version
+  //
+  // The latest version available for this package. Often expected when viewing
+  // a summary of many available packages.
+  string latest_pkg_version = 3;
+
+  // Available package Icon URL
+  //
+  // A url for an icon.
+  string icon_url = 4;
+
+  // Available package display name
+  //
+  // A name as displayed to users
+  string display_name = 5;
+
+  // Available package short description
+  //
+  // A short description of the app provided by the package
+  string short_description = 6;
+}
+
+// AvailablePackageDetail
+//
+// An AvailablePackageDetail provides additional details required when
+// inspecting an individual package.
+message AvailablePackageDetail {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{}'
+  // };
+
+  // Available package reference
+  //
+  // A reference uniquely identifying the package.
+  AvailablePackageReference available_package_ref = 1;
+
+  // Available package name
+  //
+  // The name of the available package
+  string name = 2;
+
+  // Available package version
+  //
+  // The version of the package (eg. chart version)
+  string pkg_version = 3;
+
+  // Available package app version
+  //
+  // The version of the packaged application (eg. wordpress version or whatever).
+  string app_version = 4;
+
+  // Available package icon URL
+  //
+  // A url for an icon.
+  string icon_url = 5;
+
+  // Available package display name
+  //
+  // A name as displayed to users
+  string display_name = 6;
+
+  // Available package short description
+  //
+  // A short description of the app provided by the package
+  string short_description = 7;
+
+  // Available package long description
+  //
+  // A longer description of the package, a few sentences.
+  string long_description = 8;
+
+  // Available package readme
+  //
+  // A longer README with potentially pages of formatted Markdown.
+  string readme = 9;
+
+  // Available package default values
+  //
+  // An example of default values used during package templating that can serve
+  // as documentation or a starting point for user customization.
+  string default_values = 10;
+
+  // Available package values schema
+  //
+  // An optional openapi/json schema that can be used to validate a user-provided values.
+
+  string values_schema = 11;
+
+  // Available package maintainers
+  //
+  // List of Maintainer
+  repeated Maintainer maintainers = 12;
+
+  // Custom data added by the plugin
+  //
+  // Some additional information added by the plugin
+  google.protobuf.Any custom_detail = 13;
+}
+
+// -- Start other definitions  --
+
+// Context
+//
+// A Context specifies the context of the message
+message Context {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{}'
+  // };
+
+  // Cluster
+  //
+  // A cluster name can be provided to target a specific cluster if multiple
+  // clusters are configured, otherwise all clusters will be assumed.
+  string cluster = 1;
+
+  // Namespace
+  //
+  // A namespace must be provided if the context of the operation is for a resource
+  // or resources in a particular namespace.
+  string namespace = 2;
+}
+
+// AvailablePackageReference
+//
+// An AvailablePackageReference has the minimum information required to uniquely
+// identify an available package. This is re-used on the summary and details of an
+// available package.
+message AvailablePackageReference {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{}'
+  // };
+
+  // Available package context
+  //
+  // The context (cluster/namespace) for the package.
+  Context context = 1;
+
+  // Available package identifier
+  //
+  // The fully qualified identifier for the available package
+  // (ie. a unique name for the context). For some packaging systems
+  // (particularly those where an available package is backed by a CR) this
+  // will just be the name, but for others such as those where an available
+  // package is not backed by a CR (eg. standard helm) it may be necessary
+  // to include the repository in the name or even the repo namespace
+  // to ensure this is unique.
+  // For example two helm repositories can define
+  // an "apache" chart that is available globally, the names would need to
+  // encode that to be unique (ie. "repoA:apache" and "repoB:apache").
+  string identifier = 2;
+
+  // Plugin for the available package
+  //
+  // The plugin used to interact with this available package.
+  // This field should be omitted when the request is in the context of a specific plugin.
+  kubeappsapis.core.plugins.v1alpha1.Plugin plugin = 3;
+}
+
+// Maintainer
+//
+// Maintainers for the package.
+message Maintainer {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{}'
+  // };
+
+  // Maintainer name
+  //
+  // A maintainer name
+  string name = 1;
+
+  // Maintainer email
+  //
+  // A maintainer email
+  string email = 2;
+  }
+
+  // FilterOptions
+  //
+  // FilterOptions available when requesting summaries
+  message FilterOptions {
+  // TODO: add example for API docs
+  // option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+  //   example: '{}'
+  // };
+
+    // Text query
+    //
+    // Text query for the request
+    string query = 1;
+
+    // Categories
+    //
+    // Collection of categories for the request
+    repeated string categories = 2;
+
+    // Repositories
+    //
+    // Collection of repositories where the packages belong to
+    repeated string repositories = 3;
+
+    // Package version
+    //
+    // Package version for the request
+    string pkg_version = 4;
+
+    // App version
+    //
+    // Packaged app version for the request
+    string app_version = 5;
+  };

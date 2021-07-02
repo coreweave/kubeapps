@@ -18,6 +18,7 @@ package kube
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +26,9 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -74,6 +77,13 @@ type ClusterConfig struct {
 	// the pinniped namespace, authenticator type and authenticator name
 	// that should be used for any credential exchange.
 	PinnipedConfig PinnipedConciergeConfig `json:"pinnipedConfig,omitempty"`
+
+	// IsKubeappsCluster is an optional per-cluster configuration specifying
+	// that this cluster is the one in which Kubeapps is being installed.
+	// Often this is inferred as the cluster without an explicit APIServiceURL, but
+	// if every cluster defines an APIServiceURL, we can no longer infer the cluster
+	// on which Kubeapps is installed.
+	IsKubeappsCluster bool `json:"isKubeappsCluster,omitempty"`
 }
 
 // PinnipedConciergeConfig enables each cluster configuration to specify the
@@ -102,6 +112,13 @@ func NewClusterConfig(inClusterConfig *rest.Config, userToken string, cluster st
 	config := rest.CopyConfig(inClusterConfig)
 	config.BearerToken = userToken
 	config.BearerTokenFile = ""
+
+	// If the cluster is empty, we assume the rest of the inClusterConfig is correct. This can be the case when
+	// the cluster on which Kubeapps is installed is not one presented in the UI as a target (hence not in the
+	// `clusters` configuration).
+	if cluster == "" {
+		return config, nil
+	}
 
 	clusterConfig, ok := clustersConfig.Clusters[cluster]
 	if !ok {
@@ -148,6 +165,58 @@ func NewClusterConfig(inClusterConfig *rest.Config, userToken string, cluster st
 	return config, nil
 }
 
+func ParseClusterConfig(configPath, caFilesPrefix string, pinnipedProxyURL string) (ClustersConfig, func(), error) {
+	caFilesDir, err := ioutil.TempDir(caFilesPrefix, "")
+	if err != nil {
+		return ClustersConfig{}, func() {}, err
+	}
+	deferFn := func() { os.RemoveAll(caFilesDir) }
+	content, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return ClustersConfig{}, deferFn, err
+	}
+
+	var clusterConfigs []ClusterConfig
+	if err = json.Unmarshal(content, &clusterConfigs); err != nil {
+		return ClustersConfig{}, deferFn, err
+	}
+
+	configs := ClustersConfig{Clusters: map[string]ClusterConfig{}}
+	configs.PinnipedProxyURL = pinnipedProxyURL
+	for _, c := range clusterConfigs {
+		// Select the cluster in which Kubeapps in installed. We look for either
+		// `isKubeappsCluster: true` or an empty `APIServiceURL`.
+		isKubeappsClusterCandidate := c.IsKubeappsCluster || c.APIServiceURL == ""
+		if isKubeappsClusterCandidate {
+			if configs.KubeappsClusterName == "" {
+				configs.KubeappsClusterName = c.Name
+			} else {
+				return ClustersConfig{}, nil, fmt.Errorf("only one cluster can be configured using either 'isKubeappsCluster: true' or without an apiServiceURL to refer to the cluster on which Kubeapps is installed, two defined: %q, %q", configs.KubeappsClusterName, c.Name)
+			}
+		}
+
+		// We need to decode the base64-encoded cadata from the input.
+		if c.CertificateAuthorityData != "" {
+			decodedCAData, err := base64.StdEncoding.DecodeString(c.CertificateAuthorityData)
+			if err != nil {
+				return ClustersConfig{}, deferFn, err
+			}
+			c.CertificateAuthorityDataDecoded = string(decodedCAData)
+
+			// We also need a CAFile field because Helm uses the genericclioptions.ConfigFlags
+			// struct which does not support CAData.
+			// https://github.com/kubernetes/cli-runtime/issues/8
+			c.CAFile = filepath.Join(caFilesDir, c.Name)
+			err = ioutil.WriteFile(c.CAFile, decodedCAData, 0644)
+			if err != nil {
+				return ClustersConfig{}, deferFn, err
+			}
+		}
+		configs.Clusters[c.Name] = c
+	}
+	return configs, deferFn, nil
+}
+
 // combinedClientsetInterface provides both the app repository clientset and the corev1 clientset.
 type combinedClientsetInterface interface {
 	KubeappsV1alpha1() v1alpha1typed.KubeappsV1alpha1Interface
@@ -171,6 +240,11 @@ func (c *combinedClientset) RestClient() rest.Interface {
 
 func (c *combinedClientset) MaxWorkers() int {
 	return int(c.restCli.GetRateLimiter().QPS())
+}
+
+type KubeOptions struct {
+	NamespaceHeaderName    string
+	NamespaceHeaderPattern string
 }
 
 // kubeHandler handles http requests for operating on app repositories and k8s resources
@@ -197,6 +271,9 @@ type kubeHandler struct {
 	// version (and since this is a private struct, external code cannot change
 	// the function).
 	clientsetForConfig func(*rest.Config) (combinedClientsetInterface, error)
+
+	// Additional options from Kubeops arguments
+	options KubeOptions
 }
 
 // userHandler is an extension of kubeHandler for a specific service account
@@ -229,7 +306,7 @@ type handler interface {
 	UpdateAppRepository(appRepoBody io.ReadCloser, requestNamespace string) (*v1alpha1.AppRepository, error)
 	RefreshAppRepository(repoName string, requestNamespace string) (*v1alpha1.AppRepository, error)
 	DeleteAppRepository(name, namespace string) error
-	GetNamespaces() ([]corev1.Namespace, error)
+	GetNamespaces(precheckedNamespaces []corev1.Namespace) ([]corev1.Namespace, error)
 	GetSecret(name, namespace string) (*corev1.Secret, error)
 	GetAppRepository(repoName, repoNamespace string) (*v1alpha1.AppRepository, error)
 	ValidateAppRepository(appRepoBody io.ReadCloser, requestNamespace string) (*ValidationResponse, error)
@@ -241,6 +318,7 @@ type handler interface {
 type AuthHandler interface {
 	AsUser(token, cluster string) (handler, error)
 	AsSVC(cluster string) (handler, error)
+	GetOptions() KubeOptions
 }
 
 func (a *kubeHandler) getSvcClientsetForCluster(cluster string, config *rest.Config) (combinedClientsetInterface, error) {
@@ -252,7 +330,7 @@ func (a *kubeHandler) getSvcClientsetForCluster(cluster string, config *rest.Con
 	// cluster, the namespace selector remains unpopulated.
 	var svcClientset combinedClientsetInterface
 	var err error
-	if cluster == a.clustersConfig.KubeappsClusterName {
+	if cluster == "" || cluster == a.clustersConfig.KubeappsClusterName {
 		svcClientset = a.kubeappsSvcClientset
 	} else {
 		additionalCluster, ok := a.clustersConfig.Clusters[cluster]
@@ -269,6 +347,10 @@ func (a *kubeHandler) getSvcClientsetForCluster(cluster string, config *rest.Con
 		}
 	}
 	return svcClientset, nil
+}
+
+func (a *kubeHandler) GetOptions() KubeOptions {
+	return a.options
 }
 
 func (a *kubeHandler) AsUser(token, cluster string) (handler, error) {
@@ -334,6 +416,8 @@ type appRepositoryRequestDetails struct {
 	OCIRepositories       []string                `json:"ociRepositories"`
 	TLSInsecureSkipVerify bool                    `json:"tlsInsecureSkipVerify"`
 	FilterRule            v1alpha1.FilterRuleSpec `json:"filterRule"`
+	Description           string                  `json:"description"`
+	PassCredentials       bool                    `json:"passCredentials"`
 }
 
 // ErrGlobalRepositoryWithSecrets defines the error returned when an attempt is
@@ -346,7 +430,7 @@ var ErrEmptyOCIRegistry = fmt.Errorf("You need to specify at least one repositor
 
 // NewHandler returns a handler configured with a service account client set and a config
 // with a blank token to be copied when creating user client sets with specific tokens.
-func NewHandler(kubeappsNamespace string, burst int, qps float32, clustersConfig ClustersConfig) (AuthHandler, error) {
+func NewHandler(kubeappsNamespace, namespaceHeaderName, namespaceHeaderPattern string, burst int, qps float32, clustersConfig ClustersConfig) (AuthHandler, error) {
 	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(),
 		&clientcmd.ConfigOverrides{
@@ -371,6 +455,11 @@ func NewHandler(kubeappsNamespace string, burst int, qps float32, clustersConfig
 	config.Burst = burst
 	config.QPS = qps
 
+	options := KubeOptions{
+		NamespaceHeaderName:    namespaceHeaderName,
+		NamespaceHeaderPattern: namespaceHeaderPattern,
+	}
+
 	svcRestConfig, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, err
@@ -387,6 +476,7 @@ func NewHandler(kubeappsNamespace string, burst int, qps float32, clustersConfig
 		clientsetForConfig:   clientsetForConfig,
 		kubeappsSvcClientset: svcClientset,
 		clustersConfig:       clustersConfig,
+		options:              options,
 	}, nil
 }
 
@@ -413,29 +503,27 @@ func parseRepoRequest(appRepoBody io.ReadCloser) (*appRepositoryRequest, error) 
 	return &appRepoRequest, nil
 }
 
-func (a *userHandler) applyAppRepositorySecret(repoSecret *corev1.Secret, requestNamespace string, appRepo *v1alpha1.AppRepository) error {
+func (a *userHandler) applyAppRepositorySecret(repoSecret *corev1.Secret, requestNamespace string) error {
 	// TODO: pass request context through from user request to clientset.
+	// Create the secret in the requested namespace if it's not an existing docker config secret
 	_, err := a.clientset.CoreV1().Secrets(requestNamespace).Create(context.TODO(), repoSecret, metav1.CreateOptions{})
 	if err != nil && k8sErrors.IsAlreadyExists(err) {
 		_, err = a.clientset.CoreV1().Secrets(requestNamespace).Update(context.TODO(), repoSecret, metav1.UpdateOptions{})
 	}
-	if err != nil {
-		return err
-	}
+	return err
+}
 
-	// TODO(#1647): Move app repo sync to namespaces so secret copy not required.
-	if requestNamespace != a.kubeappsNamespace {
-		repoSecret.ObjectMeta.Name = KubeappsSecretNameForRepo(appRepo.ObjectMeta.Name, appRepo.ObjectMeta.Namespace)
-		repoSecret.ObjectMeta.OwnerReferences = nil
-		_, err = a.svcClientset.CoreV1().Secrets(a.kubeappsNamespace).Create(context.TODO(), repoSecret, metav1.CreateOptions{})
-		if err != nil && k8sErrors.IsAlreadyExists(err) {
-			_, err = a.clientset.CoreV1().Secrets(a.kubeappsNamespace).Update(context.TODO(), repoSecret, metav1.UpdateOptions{})
-		}
-		if err != nil {
-			return err
-		}
+// TODO(#1647): Move app repo sync to namespaces so secret copy not required.
+func (a *userHandler) copyAppRepositorySecret(repoSecret *corev1.Secret, appRepo *v1alpha1.AppRepository) error {
+	repoSecret.ObjectMeta.Name = KubeappsSecretNameForRepo(appRepo.ObjectMeta.Name, appRepo.ObjectMeta.Namespace)
+	repoSecret.ObjectMeta.Namespace = a.kubeappsNamespace
+	repoSecret.ObjectMeta.OwnerReferences = nil
+	repoSecret.ObjectMeta.ResourceVersion = ""
+	_, err := a.svcClientset.CoreV1().Secrets(a.kubeappsNamespace).Create(context.TODO(), repoSecret, metav1.CreateOptions{})
+	if err != nil && k8sErrors.IsAlreadyExists(err) {
+		_, err = a.clientset.CoreV1().Secrets(a.kubeappsNamespace).Update(context.TODO(), repoSecret, metav1.UpdateOptions{})
 	}
-	return nil
+	return err
 }
 
 // ListAppRepositories list AppRepositories in a namespace, bypass RBAC if the requeste namespace is the global one
@@ -473,9 +561,23 @@ func (a *userHandler) CreateAppRepository(appRepoBody io.ReadCloser, requestName
 		return nil, err
 	}
 
-	repoSecret := secretForRequest(appRepoRequest, appRepo)
+	repoSecret, err := a.secretForRequest(appRepoRequest, appRepo, requestNamespace)
+	if err != nil {
+		return nil, err
+	}
+
 	if repoSecret != nil {
-		a.applyAppRepositorySecret(repoSecret, requestNamespace, appRepo)
+		// If the secret is a docker config, the secret already exists so we don't need to create it
+		if _, ok := repoSecret.Data[".dockerconfigjson"]; !ok {
+			err = a.applyAppRepositorySecret(repoSecret, requestNamespace)
+		}
+		if err != nil {
+			return nil, err
+		}
+		// If the namespace is different than the Kubeapps one, the secret needs to be copied
+		if requestNamespace != a.kubeappsNamespace {
+			err = a.copyAppRepositorySecret(repoSecret, appRepo)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -516,9 +618,23 @@ func (a *userHandler) UpdateAppRepository(appRepoBody io.ReadCloser, requestName
 		return nil, err
 	}
 
-	repoSecret := secretForRequest(appRepoRequest, appRepo)
+	repoSecret, err := a.secretForRequest(appRepoRequest, appRepo, requestNamespace)
+	if err != nil {
+		return nil, err
+	}
+
 	if repoSecret != nil {
-		a.applyAppRepositorySecret(repoSecret, requestNamespace, appRepo)
+		// If the secret is a docker config, the secret already exists so we don't need to create it
+		if _, ok := repoSecret.Data[".dockerconfigjson"]; !ok {
+			err = a.applyAppRepositorySecret(repoSecret, requestNamespace)
+		}
+		if err != nil {
+			return nil, err
+		}
+		// If the namespace is different than the Kubeapps one, the secret needs to be copied
+		if requestNamespace != a.kubeappsNamespace {
+			err = a.copyAppRepositorySecret(repoSecret, appRepo)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -584,13 +700,9 @@ func (a *userHandler) getValidationCli(appRepoBody io.ReadCloser, requestNamespa
 		return nil, nil, ErrGlobalRepositoryWithSecrets
 	}
 
-	repoSecret := secretForRequest(appRepoRequest, appRepo)
-
-	if len(appRepoRequest.AppRepository.AuthRegCreds) > 0 {
-		repoSecret, err = a.GetSecret(appRepoRequest.AppRepository.AuthRegCreds, requestNamespace)
-		if err != nil {
-			return nil, nil, err
-		}
+	repoSecret, err := a.secretForRequest(appRepoRequest, appRepo, requestNamespace)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	cli, err := InitNetClient(appRepo, repoSecret, repoSecret, nil)
@@ -739,12 +851,17 @@ func appRepositoryForRequest(appRepoRequest *appRepositoryRequest) *v1alpha1.App
 			OCIRepositories:       appRepo.OCIRepositories,
 			TLSInsecureSkipVerify: appRepo.TLSInsecureSkipVerify,
 			FilterRule:            appRepo.FilterRule,
+			Description:           appRepo.Description,
+			PassCredentials:       appRepo.PassCredentials,
 		},
 	}
 }
 
 // secretForRequest takes care of parsing the request data into a secret for an AppRepository.
-func secretForRequest(appRepoRequest *appRepositoryRequest, appRepo *v1alpha1.AppRepository) *corev1.Secret {
+func (a *userHandler) secretForRequest(appRepoRequest *appRepositoryRequest, appRepo *v1alpha1.AppRepository, namespace string) (*corev1.Secret, error) {
+	if len(appRepoRequest.AppRepository.AuthRegCreds) > 0 {
+		return a.GetSecret(appRepoRequest.AppRepository.AuthRegCreds, namespace)
+	}
 	appRepoDetails := appRepoRequest.AppRepository
 	secrets := map[string]string{}
 	if appRepoDetails.AuthHeader != "" {
@@ -755,7 +872,7 @@ func secretForRequest(appRepoRequest *appRepositoryRequest, appRepo *v1alpha1.Ap
 	}
 
 	if len(secrets) == 0 {
-		return nil
+		return nil, nil
 	}
 	blockOwnerDeletion := true
 	return &corev1.Secret{
@@ -772,7 +889,7 @@ func secretForRequest(appRepoRequest *appRepositoryRequest, appRepo *v1alpha1.Ap
 			},
 		},
 		StringData: secrets,
-	}
+	}, nil
 }
 
 func secretNameForRepo(repoName string) string {
@@ -863,37 +980,39 @@ func filterActiveNamespaces(namespaces []corev1.Namespace) []corev1.Namespace {
 }
 
 // GetNamespaces return the list of namespaces that the user has permission to access
-func (a *userHandler) GetNamespaces() ([]corev1.Namespace, error) {
-	// Try to list namespaces with the user token, for backward compatibility
+func (a *userHandler) GetNamespaces(precheckedNamespaces []corev1.Namespace) ([]corev1.Namespace, error) {
 	var namespaceList []corev1.Namespace
-	namespaces, err := a.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		if k8sErrors.IsForbidden(err) {
-			// The user doesn't have permissions to list namespaces, use the current serviceaccount
-			namespaces, err = a.svcClientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
-			if err != nil && k8sErrors.IsForbidden(err) {
-				// If the configured svcclient doesn't have permission, just return an empty list.
-				return []corev1.Namespace{}, nil
+
+	if len(precheckedNamespaces) > 0 {
+		namespaceList = append(namespaceList, precheckedNamespaces...)
+	} else {
+		// Try to list namespaces with the user token, for backward compatibility
+		namespaces, err := a.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			if k8sErrors.IsForbidden(err) {
+				// The user doesn't have permissions to list namespaces, use the current serviceaccount
+				namespaces, err = a.svcClientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+				if err != nil && k8sErrors.IsForbidden(err) {
+					// If the configured svcclient doesn't have permission, just return an empty list.
+					return []corev1.Namespace{}, nil
+				}
+			} else {
+				return nil, err
+			}
+
+			// Filter namespaces in which the user has permissions to write (secrets) only
+			namespaceList, err = filterAllowedNamespaces(a.clientset, namespaces.Items)
+			if err != nil {
+				return nil, err
 			}
 		} else {
-			return nil, err
+			// If the user can list namespaces, do not filter them
+			namespaceList = namespaces.Items
 		}
-
-		// Filter namespaces in which the user has permissions to write (secrets) only
-		namespaceList, err = filterAllowedNamespaces(a.clientset, namespaces.Items)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// If the user can list namespaces, do not filter them
-		namespaceList = namespaces.Items
 	}
 
 	// Filter namespaces that are in terminating state
 	namespaceList = filterActiveNamespaces(namespaceList)
-	if err != nil {
-		return nil, err
-	}
 
 	return namespaceList, nil
 }

@@ -2,16 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -31,16 +26,18 @@ import (
 const clustersCAFilesPrefix = "/etc/additional-clusters-cafiles"
 
 var (
-	clustersConfigPath string
-	assetsvcURL        string
-	helmDriverArg      string
-	listLimit          int
-	pinnipedProxyURL   string
-	burst              int
-	qps                float32
-	settings           environment.EnvSettings
-	timeout            int64
-	userAgentComment   string
+	clustersConfigPath     string
+	assetsvcURL            string
+	helmDriverArg          string
+	listLimit              int
+	pinnipedProxyURL       string
+	burst                  int
+	qps                    float32
+	settings               environment.EnvSettings
+	timeout                int64
+	userAgentComment       string
+	namespaceHeaderName    string
+	namespaceHeaderPattern string
 )
 
 func init() {
@@ -55,6 +52,8 @@ func init() {
 	pflag.StringVar(&pinnipedProxyURL, "pinniped-proxy-url", "http://kubeapps-internal-pinniped-proxy.kubeapps:3333", "internal url to be used for requests to clusters configured for credential proxying via pinniped")
 	pflag.IntVar(&burst, "burst", 15, "internal burst capacity")
 	pflag.Float32Var(&qps, "qps", 10, "internal QPS rate")
+	pflag.StringVar(&namespaceHeaderName, "namespace-header-name", "", "name of the header field, e.g. namespace-header-name=X-Consumer-Groups")
+	pflag.StringVar(&namespaceHeaderPattern, "namespace-header-pattern", "", "regular expression that matches only single group, e.g. namespace-header-pattern=^namespace:([\\w]+):\\w+$, to match namespace:ns:read")
 }
 
 func main() {
@@ -71,7 +70,7 @@ func main() {
 	if clustersConfigPath != "" {
 		var err error
 		var cleanupCAFiles func()
-		clustersConfig, cleanupCAFiles, err = parseClusterConfig(clustersConfigPath, clustersCAFilesPrefix)
+		clustersConfig, cleanupCAFiles, err = kube.ParseClusterConfig(clustersConfigPath, clustersCAFilesPrefix, pinnipedProxyURL)
 		if err != nil {
 			log.Fatalf("unable to parse additional clusters config: %+v", err)
 		}
@@ -79,12 +78,14 @@ func main() {
 	}
 
 	options := handler.Options{
-		ListLimit:         listLimit,
-		Timeout:           timeout,
-		KubeappsNamespace: kubeappsNamespace,
-		ClustersConfig:    clustersConfig,
-		Burst:             burst,
-		QPS:               qps,
+		ListLimit:              listLimit,
+		Timeout:                timeout,
+		KubeappsNamespace:      kubeappsNamespace,
+		ClustersConfig:         clustersConfig,
+		Burst:                  burst,
+		QPS:                    qps,
+		NamespaceHeaderName:    namespaceHeaderName,
+		NamespaceHeaderPattern: namespaceHeaderPattern,
 	}
 
 	storageForDriver := agent.StorageForSecrets
@@ -115,7 +116,7 @@ func main() {
 	addRoute("DELETE", "/clusters/{cluster}/namespaces/{namespace}/releases/{releaseName}", handler.DeleteRelease)
 
 	// Backend routes unrelated to kubeops functionality.
-	err := backendHandlers.SetupDefaultRoutes(r.PathPrefix("/backend/v1").Subrouter(), options.Burst, options.QPS, clustersConfig)
+	err := backendHandlers.SetupDefaultRoutes(r.PathPrefix("/backend/v1").Subrouter(), namespaceHeaderName, namespaceHeaderPattern, options.Burst, options.QPS, clustersConfig)
 	if err != nil {
 		log.Fatalf("Unable to setup backend routes: %+v", err)
 	}
@@ -180,53 +181,4 @@ func main() {
 	srv.Shutdown(ctx)
 	log.Info("All requests have been served. Exiting")
 	os.Exit(0)
-}
-
-func parseClusterConfig(configPath, caFilesPrefix string) (kube.ClustersConfig, func(), error) {
-	caFilesDir, err := ioutil.TempDir(caFilesPrefix, "")
-	if err != nil {
-		return kube.ClustersConfig{}, func() {}, err
-	}
-	deferFn := func() { os.RemoveAll(caFilesDir) }
-	content, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		return kube.ClustersConfig{}, deferFn, err
-	}
-
-	var clusterConfigs []kube.ClusterConfig
-	if err = json.Unmarshal(content, &clusterConfigs); err != nil {
-		return kube.ClustersConfig{}, deferFn, err
-	}
-
-	configs := kube.ClustersConfig{Clusters: map[string]kube.ClusterConfig{}}
-	configs.PinnipedProxyURL = pinnipedProxyURL
-	for _, c := range clusterConfigs {
-		if c.APIServiceURL == "" {
-			if configs.KubeappsClusterName == "" {
-				configs.KubeappsClusterName = c.Name
-			} else {
-				return kube.ClustersConfig{}, nil, fmt.Errorf("only one cluster can be configured without an apiServiceURL, two defined: %q, %q", configs.KubeappsClusterName, c.Name)
-			}
-		}
-
-		// We need to decode the base64-encoded cadata from the input.
-		if c.CertificateAuthorityData != "" {
-			decodedCAData, err := base64.StdEncoding.DecodeString(c.CertificateAuthorityData)
-			if err != nil {
-				return kube.ClustersConfig{}, deferFn, err
-			}
-			c.CertificateAuthorityDataDecoded = string(decodedCAData)
-
-			// We also need a CAFile field because Helm uses the genericclioptions.ConfigFlags
-			// struct which does not support CAData.
-			// https://github.com/kubernetes/cli-runtime/issues/8
-			c.CAFile = filepath.Join(caFilesDir, c.Name)
-			err = ioutil.WriteFile(c.CAFile, decodedCAData, 0644)
-			if err != nil {
-				return kube.ClustersConfig{}, deferFn, err
-			}
-		}
-		configs.Clusters[c.Name] = c
-	}
-	return configs, deferFn, nil
 }

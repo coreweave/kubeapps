@@ -1,0 +1,41 @@
+version: v1beta1
+plugins:
+  - name: go
+    out: gen
+    opt:
+      - module=github.com/kubeapps/kubeapps/cmd/kubeapps-apis/gen
+  - name: go-grpc
+    out: gen
+    opt:
+      - module=github.com/kubeapps/kubeapps/cmd/kubeapps-apis/gen
+      # The following option controls whether the generated interfaces require
+      # the `mustEmbedUnimplemented**Server` method. This method is useful to
+      # ensure that when you add a method to a proto service and regenerate
+      # files, they will automatically implement the new method and return
+      # "Unimplemented", as opposed to not compiling until the new method is
+      # added explicitly. But a plugin can still embed the
+      # `Unimplemented**Server` struct, it's just not enforced. The
+      # unintentional downside of enforcing it via the
+      # `mustEmbedUnimplemented**Server` for us is that the
+      # `mustEmbedUnimplemented**Server` method is not exposed, which means that
+      # *only* implementations in the same package (ie. with access to the same
+      # unexposed method) can satisfy the interface. We explicitly want plugins
+      # defined in other packages to be able to satisfy a generic gRPC server
+      # interface.
+      # Created https://github.com/grpc/grpc-go/issues/4500 to discuss upstream.
+      - require_unimplemented_servers=false
+  - name: grpc-gateway
+    out: gen
+    opt:
+      - module=github.com/kubeapps/kubeapps/cmd/kubeapps-apis/gen
+  # Consider migrating to openapiv3 once ready
+  # https://github.com/grpc-ecosystem/grpc-gateway/pull/2147
+  - name: openapiv2
+    out: docs
+    strategy: all
+    opt:
+      - allow_merge=true
+      - merge_file_name=kubeapps-apis
+      - allow_repeated_fields_in_body=true
+      # - generate_unbound_methods=true # have to re-check it
+      # - json_names_for_fields=false # have to re-check it

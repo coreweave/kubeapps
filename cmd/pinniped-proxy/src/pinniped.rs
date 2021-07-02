@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use k8s_openapi::api::core::v1 as corev1;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1 as metav1;
 use kube::{
-    api::{Api, PostParams}, Client, Config, Service
+    api::{Api, PostParams}, Client, Config
 };
 use kube_derive::CustomResource;
 use log::debug;
@@ -14,7 +14,7 @@ use openssl::{pkcs12::Pkcs12, pkey::PKey, x509::X509};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use thiserror::Error;
-use url::Url;
+use http::Uri;
 
 const DEFAULT_PINNIPED_API_SUFFIX: &str = "DEFAULT_PINNIPED_API_SUFFIX";
 const DEFAULT_PINNIPED_NAMESPACE: &str = "DEFAULT_PINNIPED_NAMESPACE";
@@ -224,13 +224,13 @@ fn get_client_config(
     pinniped_namespace: String,
 ) -> Result<kube::Client> {
     let mut config =
-        Config::new(Url::parse(k8s_api_server_url).context("Failed parsing url for exchange")?);
-    config.default_ns = pinniped_namespace.clone();
+        Config::new(k8s_api_server_url.parse::<Uri>().context("Failed parsing url for exchange")?);
+    config.default_namespace = pinniped_namespace.clone();
     let x509 = X509::from_pem(k8s_api_ca_cert_data).context("error creating x509 from pem")?;
     let der = x509.to_der().context("error creating der from x509")?;
     config.root_cert = Some(vec![der]);
 
-    Ok(Client::new(Service::try_from(config)?))
+    Ok(Client::try_from(config)?)
 }
 
 /// call_pinniped_exchange returns the resulting TokenCredentialRequest with Status after requesting a token credential exchange.
@@ -383,10 +383,10 @@ mod tests {
             Ok(_) => anyhow::bail!("expected error"),
             Err(e) => {
                 assert!(
-                    e.is::<url::ParseError>(),
+                    e.is::<http::uri::InvalidUri>(),
                     "got: {:#?}, want: {}",
                     e,
-                    url::ParseError::InvalidDomainCharacter
+                    "InvalidUri.InvalidUriChar"
                 );
                 Ok(())
             }

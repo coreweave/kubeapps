@@ -2,7 +2,7 @@ version: 2.1
 parameters:
   GOLANG_VERSION:
     type: string
-    default: "1.16"
+    default: "1.16.3"
   NODE_VERSION:
     type: string
     default: "14"
@@ -12,9 +12,12 @@ parameters:
   DOCKER_VERSION:
     type: string
     default: "19.03.13"
-  HELM_VERSION:
+  HELM_VERSION_MIN:
     type: "string"
     default: "v3.1.0"
+  HELM_VERSION_STABLE:
+    type: "string"
+    default: "v3.6.0"
   OLM_VERSION:
     type: "string"
     default: "v0.17.0"
@@ -23,7 +26,13 @@ parameters:
     default: "v1.4.3"
   KUBECTL_VERSION:
     type: "string"
-    default: "v1.19.9"
+    default: "v1.19.10"
+  GITHUB_VERSION:
+    type: "string"
+    default: "1.9.2"
+  SEMVER_VERSION:
+    type: "string"
+    default: "3.2.0"
   KIND_VERSION:
     type: "string"
     default: "v0.10.0"
@@ -32,10 +41,31 @@ parameters:
     default: "v1.20.2"
   POSTGRESQL_VERSION:
     type: "string"
-    default: "11.11.0-debian-10-r45"
+    default: "11.11.0-debian-10-r76"
   IMAGES_TO_PUSH:
     type: "string"
     default: "kubeapps/apprepository-controller kubeapps/dashboard kubeapps/asset-syncer kubeapps/assetsvc kubeapps/kubeops kubeapps/pinniped-proxy"
+  CI_BOT_USERNAME:
+    type: "string"
+    default: "kubeapps-bot"
+  CI_BOT_EMAIL:
+    type: "string"
+    default: "tanzu-kubeapps-team@vmware.com"
+  CI_BOT_GPG:
+    type: "string"
+    default: "80B6EB16B1328FB18DFF2A073EBA68F3347E319D"
+  CI_BOT_KUBEAPPS_KUBEAPPS_DEPLOYKEY_FINGERPRINT:
+    type: "string"
+    default: "20:5e:d1:68:7c:10:67:c1:ab:e2:6e:33:e3:7a:64:6e"
+  CI_BOT_KUBEAPPS_KUBEAPPS_DEPLOYKEY_FILENAME:
+    type: "string"
+    default: "id_rsa_205ed1687c1067c1abe26e33e37a646e"
+  CI_BOT_FORKED_CHARTS_DEPLOYKEY_FINGERPRINT:
+    type: "string"
+    default: "59:81:2a:95:a6:54:a7:46:e5:15:f5:37:b3:4f:6c:ad"
+  CI_BOT_FORKED_CHARTS_DEPLOYKEY_FILENAME:
+    type: "string"
+    default: "id_rsa_59812a95a654a746e515f537b34f6cad"
 
 ## Build conditions
 # Build in any branch or tag
@@ -89,44 +119,50 @@ workflows:
             - build_go_images
             - build_dashboard
             - build_pinniped_proxy
+      - sync_chart_from_bitnami:
+          <<: *build_on_master
       - GKE_1_17_MASTER:
-          <<: *build_on_master
+          <<: *build_on_tag
           requires:
             - test_go
             - test_dashboard
             - build_go_images
             - build_dashboard
+            - build_pinniped_proxy
+            - sync_chart_from_bitnami
       - GKE_1_17_LATEST_RELEASE:
-          <<: *build_on_master
+          <<: *build_on_tag
           requires:
             - test_go
             - test_dashboard
             - build_go_images
             - build_dashboard
+            - build_pinniped_proxy
+            - sync_chart_from_bitnami
       - GKE_1_18_MASTER:
-          <<: *build_on_master
+          <<: *build_on_tag
           requires:
             - test_go
             - test_dashboard
             - build_go_images
             - build_dashboard
+            - build_pinniped_proxy
+            - sync_chart_from_bitnami
       - GKE_1_18_LATEST_RELEASE:
-          <<: *build_on_master
+          <<: *build_on_tag
           requires:
             - test_go
             - test_dashboard
             - build_go_images
             - build_dashboard
-      - sync_chart:
+            - build_pinniped_proxy
+            - sync_chart_from_bitnami
+      - push_images:
           <<: *build_on_master
           requires:
             - local_e2e_tests
-            - GKE_1_17_MASTER
-            - GKE_1_17_LATEST_RELEASE
-            - GKE_1_18_MASTER
-            - GKE_1_18_LATEST_RELEASE
-      - push_images:
-          <<: *build_on_master
+      - sync_chart_to_bitnami:
+          <<: *build_on_tag
           requires:
             - local_e2e_tests
             - GKE_1_17_MASTER
@@ -146,10 +182,13 @@ workflows:
 common_envars: &common_envars
   DOCKER_VERSION: << pipeline.parameters.DOCKER_VERSION >>
   GOLANG_VERSION: << pipeline.parameters.GOLANG_VERSION >>
-  HELM_VERSION: << pipeline.parameters.HELM_VERSION >>
+  HELM_VERSION_MIN: << pipeline.parameters.HELM_VERSION_MIN >>
+  HELM_VERSION_STABLE: << pipeline.parameters.HELM_VERSION_STABLE >>
   K8S_KIND_VERSION: << pipeline.parameters.K8S_KIND_VERSION >>
   KIND_VERSION: << pipeline.parameters.KIND_VERSION >>
   KUBECTL_VERSION: << pipeline.parameters.KUBECTL_VERSION >>
+  GITHUB_VERSION: << pipeline.parameters.GITHUB_VERSION >>
+  SEMVER_VERSION: << pipeline.parameters.SEMVER_VERSION >>
   MKCERT_VERSION: << pipeline.parameters.MKCERT_VERSION >>
   NODE_VERSION: << pipeline.parameters.NODE_VERSION >>
   OLM_VERSION: << pipeline.parameters.OLM_VERSION >>
@@ -168,11 +207,15 @@ install_gcloud_sdk: &install_gcloud_sdk
       fi
 install_helm_cli: &install_helm_cli
   run:
-    name: "Install helm"
+    name: "Install helm (minimum and stable)"
     command: |
-      wget https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz
-      tar zxf helm-$HELM_VERSION-linux-amd64.tar.gz
+      wget https://get.helm.sh/helm-${HELM_VERSION_MIN}-linux-amd64.tar.gz
+      tar zxf helm-$HELM_VERSION_MIN-linux-amd64.tar.gz
       sudo mv linux-amd64/helm /usr/local/bin/
+
+      wget https://get.helm.sh/helm-${HELM_VERSION_STABLE}-linux-amd64.tar.gz
+      tar zxf helm-$HELM_VERSION_STABLE-linux-amd64.tar.gz
+      sudo mv linux-amd64/helm /usr/local/bin/helm-stable
 exports: &exports
   run:
     name: "Export variables"
@@ -193,7 +236,7 @@ build_images: &build_images
     - <<: *exports
     - run:
         name: Build and push CI images
-        command: | 
+        command: |
           mkdir -p images/
           read -ra IMG_ARRAY \<<< "$IMAGES"
           if [[ -n "${CIRCLE_TAG}" ]]; then
@@ -224,7 +267,7 @@ install_cluster: &install_cluster
         kubectl --context kind-kubeapps-ci --kubeconfig ${HOME}/.kube/kind-config-kubeapps-ci apply -f ./docs/user/manifests/ingress-nginx-kind-with-large-proxy-buffers.yaml &&
         sleep 5 &&
         kubectl --context kind-kubeapps-ci --kubeconfig ${HOME}/.kube/kind-config-kubeapps-ci wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s &&
-        
+
         kubectl --context kind-kubeapps-ci --kubeconfig ${HOME}/.kube/kind-config-kubeapps-ci delete rolebinding kubeapps-user -n  kubeapps-user-namespace &&
         kubectl --context kind-kubeapps-ci --kubeconfig ${HOME}/.kube/kind-config-kubeapps-ci create rolebinding kubeapps-view-secret-oidc --role view-secrets --user oidc:kubeapps-user@example.com &&
         kubectl --context kind-kubeapps-ci --kubeconfig ${HOME}/.kube/kind-config-kubeapps-ci create clusterrolebinding kubeapps-view-oidc  --clusterrole=view --user oidc:kubeapps-user@example.com &&
@@ -258,7 +301,7 @@ export_cluster_variables: &export_cluster_variables
 
       # If running kubectl without args, use the default "kubeapps-ci" cluster
       cp ${HOME}/.kube/kind-config-kubeapps-ci ${HOME}/.kube/config
-      kubectl config set-context kind-kubeapps-ci 
+      kubectl config set-context kind-kubeapps-ci
 
       # If the default IP the proper one, the multicluster setup will fail
       if [ "$DEFAULT_DEX_IP" != "$DEX_IP" ]; then echo "Default IP does not match with current IP used in Kind"; exit 1; fi
@@ -327,20 +370,60 @@ install_mkcert: &install_mkcert
       chmod +x "mkcert-${MKCERT_VERSION}-linux-amd64"
       sudo mv "mkcert-${MKCERT_VERSION}-linux-amd64" /usr/local/bin/mkcert
       mkcert -install
+install_github: &install_github
+  run:
+    # Assuming there is a personal access token created in GitHub granted with the scopes
+    # "repo:status", "public_repo" and "read:org"
+    # This token is passed as a GITHUB_TOKEN env var via CircleCI
+    name: "Install GitHub CLI"
+    command: |
+      cd /tmp
+      wget https://github.com/cli/cli/releases/download/v${GITHUB_VERSION}/gh_${GITHUB_VERSION}_linux_amd64.tar.gz
+      tar zxf gh_${GITHUB_VERSION}_linux_amd64.tar.gz
+      rm gh_${GITHUB_VERSION}_linux_amd64.tar.gz
+      sudo mv gh_${GITHUB_VERSION}_linux_amd64/bin/gh /usr/local/bin/
+install_semver: &install_semver
+  run:
+    name: "Install semver bash tool"
+    command: |
+      cd /tmp
+      wget https://github.com/fsaintjacques/semver-tool/archive/refs/tags/${SEMVER_VERSION}.tar.gz
+      tar zxf ${SEMVER_VERSION}.tar.gz
+      rm ${SEMVER_VERSION}.tar.gz
+      cd semver-tool-${SEMVER_VERSION}
+      sudo make install
+setup_gpg: &setup_gpg
+  run:
+    name: "Install the GPG key"
+    command: |
+      # Creating the files from the GPG_KEY_PUBLIC and GPG_KEY_PRIVATE env vars
+      echo -e ${GPG_KEY_PUBLIC} > /tmp/public.key
+      echo -e ${GPG_KEY_PRIVATE} > /tmp/private.key
+
+      # Importing the GPG keys
+      gpg --import /tmp/public.key
+      gpg --import --no-tty --batch --yes /tmp/private.key
+
+      # Trusting the imported GPG private key
+      (echo 5; echo y; echo save) |  gpg --command-fd 0 --no-tty --no-greeting -q --edit-key "<< pipeline.parameters.CI_BOT_GPG >>" trust
+
+      # Listing the key to verify the import process succeeded
+      gpg --list-secret-keys << pipeline.parameters.CI_BOT_EMAIL >>
+
 install_multicluster_deps: &install_multicluster_deps
   run:
     name: "Install multicluster deps"
     command: |
       sed -i -e "s/172.18.0.2/$DEFAULT_DEX_IP/g;s/localhost/kubeapps-ci.kubeapps/g" ./docs/user/manifests/kubeapps-local-dev-dex-values.yaml
       helm repo add stable https://charts.helm.sh/stable
-      
+
       # Install dex
       kubectl create namespace dex
       helm install dex stable/dex --namespace dex --values ./docs/user/manifests/kubeapps-local-dev-dex-values.yaml
 
       # Install openldap
       kubectl create namespace ldap
-      helm install ldap stable/openldap --namespace ldap 
+      helm install ldap stable/openldap --namespace ldap
 
       # Create certs
       kubectl -n dex create secret tls dex-web-server-tls --key ./devel/dex.key --cert ./devel/dex.crt
@@ -372,7 +455,7 @@ gke_test: &gke_test
     - checkout
     - run:
         name: Check conditions
-        command: | 
+        command: |
           source ./script/chart_sync_utils.sh
 
           # In the case of GKE we will only want to build if it is
@@ -393,7 +476,7 @@ gke_test: &gke_test
     - setup_remote_docker
     - run:
         name: Configure Google Cloud
-        command: | 
+        command: |
           gcloud -q config set project $GKE_PROJECT
           export GOOGLE_APPLICATION_CREDENTIALS=/tmp/client_secrets.json
           echo $GCLOUD_KEY > $GOOGLE_APPLICATION_CREDENTIALS
@@ -404,11 +487,11 @@ gke_test: &gke_test
     # A GKE cluster name cannot contain non-alphanumeric characters (nor uppercase letters)
     - run:
         name: Export escaped GKE cluster name
-        command: | 
+        command: |
           echo "export ESCAPED_GKE_CLUSTER=$(echo ${GKE_CLUSTER}-${CIRCLE_BRANCH:-$CIRCLE_TAG}-${TEST_LATEST_RELEASE}-${GKE_BRANCH}-ci | sed 's/[^a-z0-9-]//g')" >> $BASH_ENV
     - run:
         name: Start GKE environment
-        command: | 
+        command: |
           ./script/start-gke-env.sh $ESCAPED_GKE_CLUSTER $GKE_ZONE $GKE_BRANCH $GKE_ADMIN > /dev/null
     - <<: *install_helm_cli
     - <<: *run_e2e_tests
@@ -459,12 +542,12 @@ jobs:
       - <<: *exports
       - run:
           name: Run go unit tests
-          command: | 
+          command: |
             make test
       - setup_remote_docker
       - run:
           name: Run go integration tests for DB
-          command: | 
+          command: |
             docker run -d --name postgresql --rm --publish 5432:5432 -e ALLOW_EMPTY_PASSWORD=yes bitnami/postgresql:${POSTGRESQL_VERSION}
             docker run --network container:postgresql -d --name tests circleci/golang:${GOLANG_VERSION} tail -f /dev/null
             docker cp /go tests:/
@@ -476,15 +559,15 @@ jobs:
       - checkout
       - run:
           name: Install dashboard dependencies
-          command: | 
+          command: |
             yarn install --cwd=dashboard --frozen-lockfile
       - run:
           name: Run dashboard linter
-          command: | 
+          command: |
             yarn --cwd=dashboard run lint
       - run:
           name: Run dashboard unit tests
-          command: | 
+          command: |
             yarn --cwd=dashboard run test --maxWorkers=4 --coverage
   test_pinniped_proxy:
     docker:
@@ -493,8 +576,8 @@ jobs:
       - checkout
       - run:
           name: Run rust unit tests
-          command: | 
-              cargo test --manifest-path ./cmd/pinniped-proxy/Cargo.toml
+          command: |
+            cargo test --manifest-path ./cmd/pinniped-proxy/Cargo.toml
   test_chart_render:
     environment:
       <<: *common_envars
@@ -506,7 +589,7 @@ jobs:
       - <<: *install_helm_cli
       - run:
           name: Run chart template test
-          command: | 
+          command: |
             ./script/chart-template-test.sh
   build_go_images:
     docker:
@@ -536,7 +619,7 @@ jobs:
       - checkout
       - run:
           name: Create release
-          command: | 
+          command: |
             REPO_DOMAIN=kubeapps REPO_NAME=kubeapps ./script/create_release.sh ${CIRCLE_TAG}
   local_e2e_tests:
     machine: true
@@ -580,23 +663,74 @@ jobs:
       TEST_LATEST_RELEASE: 1
       USE_MULTICLUSTER_OIDC_ENV: "false"
       <<: *common_envars
-  sync_chart:
+  sync_chart_to_bitnami:
+    environment:
+      <<: *common_envars
     docker:
       - image: circleci/golang:<< pipeline.parameters.GOLANG_VERSION >>
     steps:
       - checkout
+      - <<: *install_github
+      - <<: *install_semver
+      - <<: *setup_gpg
       - add_ssh_keys:
           fingerprints:
-            - "cc:ed:2d:1f:74:3b:32:c3:99:62:d7:7d:81:af:01:e0"
+            # Deployment key uploaded to the kubeapps-bot/charts repository
+            - << pipeline.parameters.CI_BOT_FORKED_CHARTS_DEPLOYKEY_FINGERPRINT >>
+
       - run:
-          name: Configure ssh keys
-          command: | 
-            if ls ~/.ssh/id_rsa_* 1> /dev/null 2>&1; then
-              # Change order to use configured ssh_key first
-              ssh-add -D
-              ssh-add ~/.ssh/id_rsa_* ~/.ssh/id_rsa
-            fi
-            ./script/chart_sync.sh kubernetes-bitnami kubernetes@bitnami.com
+          # This is a key pair: https://circleci.com/docs/2.0/gh-bb-integration/
+          # public key uploaded to GitHub as a deploy key with write permissions in both kubeapps and kubeapps-bot/charts
+          # private key uploaded to CircleCI with hostname "github.com"
+          name: Start ssh-agent and configure the key
+          command: |
+            eval "$(ssh-agent -s)"
+            # the name is always "id_rsa_"+fingerprint without ":""
+            # Deployment key uploaded to the kubeapps-bot/charts repository
+            ssh-add ~/.ssh/<< pipeline.parameters.CI_BOT_FORKED_CHARTS_DEPLOYKEY_FILENAME >>
+      - run:
+          # Assuming there is a personal access token created in GitHub granted with the scopes
+          # "repo:status", "public_repo" and "read:org"
+          # This token is passed as a GITHUB_TOKEN env var via CircleCI
+          name: Execute the chart_sync script
+          command: |
+            ./script/chart_sync.sh << pipeline.parameters.CI_BOT_USERNAME >> << pipeline.parameters.CI_BOT_EMAIL >> << pipeline.parameters.CI_BOT_GPG >>
+  sync_chart_from_bitnami:
+    environment:
+      <<: *common_envars
+    docker:
+      - image: circleci/golang:<< pipeline.parameters.GOLANG_VERSION >>
+    steps:
+      - checkout
+      - <<: *install_github
+      - <<: *install_semver
+      - <<: *setup_gpg
+      - add_ssh_keys:
+          fingerprints:
+            # Deployment key uploaded to the kubeapps/kubeapps repository
+            - << pipeline.parameters.CI_BOT_KUBEAPPS_KUBEAPPS_DEPLOYKEY_FINGERPRINT >>
+            # Deployment key uploaded to the kubeapps-bot/charts repository
+            - << pipeline.parameters.CI_BOT_FORKED_CHARTS_DEPLOYKEY_FINGERPRINT >>
+
+      - run:
+          # This is a key pair: https://circleci.com/docs/2.0/gh-bb-integration/
+          # public key uploaded to GitHub as a deploy key with write permissions
+          # private key uploaded to CircleCI with hostname "github.com"
+          name: Start ssh-agent and configure the key
+          command: |
+            eval "$(ssh-agent -s)"
+            # the name is always "id_rsa_"+fingerprint without ":""
+            # Deployment key uploaded to the kubeapps/kubeapps repository
+            ssh-add ~/.ssh/<< pipeline.parameters.CI_BOT_KUBEAPPS_KUBEAPPS_DEPLOYKEY_FILENAME >>
+            # Deployment key uploaded to the kubeapps-bot/charts repository
+            ssh-add ~/.ssh/<< pipeline.parameters.CI_BOT_FORKED_CHARTS_DEPLOYKEY_FILENAME >>
+      - run:
+          # Assuming there is a personal access token created in GitHub granted with the scopes
+          # "repo:status", "public_repo" and "read:org"
+          # This token is passed as a GITHUB_TOKEN env var via CircleCI
+          name: Execute the check_upstream_chart script
+          command: |
+            ./script/chart_upstream_checker.sh << pipeline.parameters.CI_BOT_USERNAME >> << pipeline.parameters.CI_BOT_EMAIL >> << pipeline.parameters.CI_BOT_GPG >> << pipeline.parameters.CI_BOT_FORKED_CHARTS_DEPLOYKEY_FILENAME >>
   push_images:
     docker:
       - image: circleci/golang:<< pipeline.parameters.GOLANG_VERSION >>
@@ -605,7 +739,7 @@ jobs:
       - <<: *exports
       - run:
           name: Push images
-          command: | 
+          command: |
             if [[ -z "$CIRCLE_PULL_REQUEST" && -n "$DOCKER_USERNAME" && -n "$DOCKER_PASSWORD" ]]; then
               docker login -u="${DOCKER_USERNAME}" -p="${DOCKER_PASSWORD}"
               for IMAGE in << pipeline.parameters.IMAGES_TO_PUSH >>; do

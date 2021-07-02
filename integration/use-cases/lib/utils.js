@@ -39,7 +39,7 @@ module.exports = {
   login: async (page, isOIDC, uri, token, username, password) => {
     await page.goto(getUrl(uri));
     if (isOIDC === "true") {
-      await page.waitForNavigation();
+      await page.waitForNavigation({ waitUntil: "domcontentloaded" });
       await expect(page).toClick("cds-button", {
         text: "Login via OIDC Provider",
       });
@@ -50,7 +50,7 @@ module.exports = {
       await expect(page).toClick(".dex-container button", {
         text: "Log in with Email",
       });
-      await page.waitForNavigation();
+      await page.waitForNavigation({ waitUntil: "domcontentloaded" });
       await page.type('input[id="login"]', username);
       await page.type('input[id="password"]', password);
       await page.waitForSelector("#submit-login", {
@@ -75,5 +75,10 @@ module.exports = {
       });
       await page.click("#login-submit-button");
     }
+  },
+  getRandomName: base => {
+    const randomNumber = Math.floor(Math.random() * Math.floor(100));
+    const name = base + "-" + randomNumber;
+    return name;
   },
 };

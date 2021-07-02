@@ -190,53 +190,6 @@ describe("fetchRepos", () => {
         type: getType(repoActions.receiveRepos),
         payload: { foo: "bar" },
       },
-      {
-        type: getType(repoActions.receiveReposSecrets),
-        payload: [],
-      },
-    ];
-
-    await store.dispatch(repoActions.fetchRepos(namespace));
-    expect(store.getActions()).toEqual(expectedActions);
-  });
-
-  it("includes secrets that are owned by an apprepo", async () => {
-    const appRepoSecret = {
-      metadata: {
-        name: "foo",
-        ownerReferences: [
-          {
-            kind: "AppRepository",
-          },
-        ],
-      },
-    };
-    const otherSecret = {
-      metadata: {
-        name: "bar",
-        ownerReferences: [
-          {
-            kind: "Other",
-          },
-        ],
-      },
-    };
-    Secret.list = jest.fn().mockReturnValue({
-      items: [appRepoSecret, otherSecret],
-    });
-    const expectedActions = [
-      {
-        type: getType(repoActions.requestRepos),
-        payload: namespace,
-      },
-      {
-        type: getType(repoActions.receiveRepos),
-        payload: { foo: "bar" },
-      },
-      {
-        type: getType(repoActions.receiveReposSecrets),
-        payload: [appRepoSecret],
-      },
     ];
 
     await store.dispatch(repoActions.fetchRepos(namespace));
@@ -283,10 +236,6 @@ describe("fetchRepos", () => {
         payload: kubeappsNamespace,
       },
       {
-        type: getType(repoActions.receiveReposSecrets),
-        payload: [],
-      },
-      {
         type: getType(repoActions.receiveRepos),
         payload: [
           { name: "repo1", metadata: { uid: "123" } },
@@ -322,10 +271,6 @@ describe("fetchRepos", () => {
       {
         type: getType(repoActions.requestRepos),
         payload: kubeappsNamespace,
-      },
-      {
-        type: getType(repoActions.receiveReposSecrets),
-        payload: [],
       },
       {
         type: getType(repoActions.receiveRepos),
@@ -364,66 +309,9 @@ describe("fetchRepos", () => {
         type: getType(repoActions.receiveRepos),
         payload: [{ name: "repo1", metadata: { uid: "123" } }],
       },
-      {
-        type: getType(repoActions.receiveReposSecrets),
-        payload: [],
-      },
     ];
 
     await store.dispatch(repoActions.fetchRepos(kubeappsNamespace, true));
-    expect(store.getActions()).toEqual(expectedActions);
-  });
-});
-
-describe("fetchRepoSecrets", () => {
-  const namespace = "default";
-  it("dispatches receiveReposSecrets if no error", async () => {
-    const appRepoSecret = {
-      metadata: {
-        name: "foo",
-        ownerReferences: [{ kind: "AppRepository" }],
-      },
-    };
-    const otherSecret = {
-      metadata: {
-        name: "bar",
-        ownerReferences: [{ kind: "Other" }],
-      },
-    };
-    Secret.list = jest.fn().mockReturnValue({
-      items: [appRepoSecret, otherSecret],
-    });
-    const expectedActions = [
-      {
-        type: getType(repoActions.receiveReposSecrets),
-        payload: [
-          {
-            metadata: {
-              name: "foo",
-              ownerReferences: [{ kind: "AppRepository" }],
-            },
-          },
-        ],
-      },
-    ];
-
-    await store.dispatch(repoActions.fetchRepoSecrets(namespace));
-    expect(store.getActions()).toEqual(expectedActions);
-  });
-
-  it("dispatches errorRepos if error fetching secrets", async () => {
-    Secret.list = jest.fn().mockImplementationOnce(() => {
-      throw new Error("Boom!");
-    });
-
-    const expectedActions = [
-      {
-        type: getType(repoActions.errorRepos),
-        payload: { err: new Error("Boom!"), op: "fetch" },
-      },
-    ];
-
-    await store.dispatch(repoActions.fetchRepoSecrets(namespace));
     expect(store.getActions()).toEqual(expectedActions);
   });
 });
@@ -485,8 +373,10 @@ describe("installRepo", () => {
     "",
     "",
     "",
+    "",
     [],
     [],
+    false,
     false,
     undefined,
   );
@@ -497,12 +387,14 @@ describe("installRepo", () => {
       "my-namespace",
       "http://foo.bar",
       "helm",
+      "",
       "Bearer: abc",
       "",
       "",
       "",
       [],
       [],
+      false,
       false,
       undefined,
     );
@@ -515,12 +407,14 @@ describe("installRepo", () => {
         "my-namespace",
         "http://foo.bar",
         "helm",
+        "",
         "Bearer: abc",
         "",
         "",
         {},
         [],
         [],
+        false,
         false,
         undefined,
       );
@@ -537,8 +431,10 @@ describe("installRepo", () => {
           "",
           "",
           "",
+          "",
           [],
           ["apache", "jenkins"],
+          false,
           false,
           undefined,
         ),
@@ -552,9 +448,11 @@ describe("installRepo", () => {
         "",
         "",
         "",
+        "",
         {},
         [],
         ["apache", "jenkins"],
+        false,
         false,
         undefined,
       );
@@ -571,9 +469,11 @@ describe("installRepo", () => {
           "",
           "",
           "",
+          "",
           [],
           [],
           true,
+          false,
           undefined,
         ),
       );
@@ -586,10 +486,12 @@ describe("installRepo", () => {
         "",
         "",
         "",
+        "",
         {},
         [],
         [],
         true,
+        false,
         undefined,
       );
     });
@@ -608,10 +510,12 @@ describe("installRepo", () => {
       "helm",
       "",
       "",
+      "",
       "This is a cert!",
       "",
       [],
       [],
+      false,
       false,
       undefined,
     );
@@ -626,10 +530,12 @@ describe("installRepo", () => {
         "helm",
         "",
         "",
+        "",
         "This is a cert!",
         {},
         [],
         [],
+        false,
         false,
         undefined,
       );
@@ -651,9 +557,11 @@ describe("installRepo", () => {
             "",
             "",
             "",
+            "",
             safeYAMLTemplate,
             [],
             [],
+            false,
             false,
             undefined,
           ),
@@ -668,11 +576,13 @@ describe("installRepo", () => {
           "",
           "",
           "",
+          "",
           {
             spec: { containers: [{ env: [{ name: "FOO", value: "BAR" }] }] },
           },
           [],
           [],
+          false,
           false,
           undefined,
         );
@@ -692,9 +602,11 @@ describe("installRepo", () => {
             "",
             "",
             "",
+            "",
             unsafeYAMLTemplate,
             [],
             [],
+            false,
             false,
             undefined,
           ),
@@ -716,9 +628,11 @@ describe("installRepo", () => {
         "",
         "",
         "",
+        "",
         {},
         [],
         [],
+        false,
         false,
         undefined,
       );
@@ -784,8 +698,10 @@ describe("installRepo", () => {
         "",
         "",
         "",
+        "",
         ["repo-1"],
         [],
+        false,
         false,
         undefined,
       ),
@@ -800,9 +716,49 @@ describe("installRepo", () => {
       "",
       "",
       "",
+      "",
       {},
       ["repo-1"],
       [],
+      false,
+      false,
+      undefined,
+    );
+  });
+
+  it("calls AppRepository create with description", async () => {
+    await store.dispatch(
+      repoActions.installRepo(
+        "my-repo",
+        "my-namespace",
+        "http://foo.bar",
+        "oci",
+        "This is a weird description 123!@#$%^&&*()_+-=<>?/.,;:'\"",
+        "",
+        "",
+        "",
+        "",
+        [],
+        ["apache", "jenkins"],
+        false,
+        false,
+        undefined,
+      ),
+    );
+    expect(AppRepository.create).toHaveBeenCalledWith(
+      "default",
+      "my-repo",
+      "my-namespace",
+      "http://foo.bar",
+      "oci",
+      "This is a weird description 123!@#$%^&&*()_+-=<>?/.,;:'\"",
+      "",
+      "",
+      "",
+      {},
+      [],
+      ["apache", "jenkins"],
+      false,
       false,
       undefined,
     );
@@ -840,12 +796,14 @@ describe("updateRepo", () => {
         "my-namespace",
         "http://foo.bar",
         "helm",
+        "",
         "foo",
         "",
         "bar",
         safeYAMLTemplate,
         ["repo-1"],
         [],
+        false,
         false,
         undefined,
       ),
@@ -857,12 +815,14 @@ describe("updateRepo", () => {
       "my-namespace",
       "http://foo.bar",
       "helm",
+      "",
       "foo",
       "",
       "bar",
       { spec: { containers: [{ env: [{ name: "FOO", value: "BAR" }] }] } },
       ["repo-1"],
       [],
+      false,
       false,
       undefined,
     );
@@ -898,12 +858,14 @@ describe("updateRepo", () => {
         "my-namespace",
         "http://foo.bar",
         "helm",
+        "",
         "foo",
         "",
         "bar",
         safeYAMLTemplate,
         ["repo-1"],
         [],
+        false,
         false,
         undefined,
       ),
@@ -915,12 +877,14 @@ describe("updateRepo", () => {
       "my-namespace",
       "http://foo.bar",
       "helm",
+      "",
       "foo",
       "",
       "bar",
       { spec: { containers: [{ env: [{ name: "FOO", value: "BAR" }] }] } },
       ["repo-1"],
       [],
+      false,
       false,
       undefined,
     );
@@ -946,12 +910,14 @@ describe("updateRepo", () => {
         "my-namespace",
         "http://foo.bar",
         "helm",
+        "",
         "foo",
         "",
         "bar",
         safeYAMLTemplate,
         [],
         [],
+        false,
         false,
         undefined,
       ),
@@ -973,8 +939,10 @@ describe("updateRepo", () => {
         "",
         "",
         "",
+        "",
         [],
         ["apache", "jenkins"],
+        false,
         false,
         undefined,
       ),
@@ -988,9 +956,52 @@ describe("updateRepo", () => {
       "",
       "",
       "",
+      "",
       {},
       [],
       ["apache", "jenkins"],
+      false,
+      false,
+      undefined,
+    );
+  });
+
+  it("updates a repo with description", async () => {
+    AppRepository.update = jest.fn().mockReturnValue({
+      appRepository: {},
+    });
+    await store.dispatch(
+      repoActions.updateRepo(
+        "my-repo",
+        "my-namespace",
+        "http://foo.bar",
+        "oci",
+        "updated description",
+        "",
+        "",
+        "",
+        "",
+        [],
+        ["apache", "jenkins"],
+        false,
+        false,
+        undefined,
+      ),
+    );
+    expect(AppRepository.update).toHaveBeenCalledWith(
+      "default",
+      "my-repo",
+      "my-namespace",
+      "http://foo.bar",
+      "oci",
+      "updated description",
+      "",
+      "",
+      "",
+      {},
+      [],
+      ["apache", "jenkins"],
+      false,
       false,
       undefined,
     );
@@ -1065,7 +1076,7 @@ describe("validateRepo", () => {
     ];
 
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false),
+      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false, false),
     );
     expect(store.getActions()).toEqual(expectedActions);
     expect(res).toBe(true);
@@ -1086,7 +1097,7 @@ describe("validateRepo", () => {
       },
     ];
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false),
+      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false, false),
     );
     expect(store.getActions()).toEqual(expectedActions);
     expect(res).toBe(false);
@@ -1110,7 +1121,7 @@ describe("validateRepo", () => {
       },
     ];
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false),
+      repoActions.validateRepo("url", "helm", "auth", "", "cert", [], false, false),
     );
     expect(store.getActions()).toEqual(expectedActions);
     expect(res).toBe(false);
@@ -1121,17 +1132,19 @@ describe("validateRepo", () => {
       code: 200,
     });
     const res = await store.dispatch(
-      repoActions.validateRepo("url", "oci", "", "", "", ["apache", "jenkins"], false),
+      repoActions.validateRepo("url", "oci", "", "", "", ["apache", "jenkins"], false, false),
     );
     expect(res).toBe(true);
     expect(AppRepository.validate).toHaveBeenCalledWith(
       "default",
+      "kubeapps-namespace",
       "url",
       "oci",
       "",
       "",
       "",
       ["apache", "jenkins"],
+      false,
       false,
     );
   });
@@ -1142,11 +1155,8 @@ describe("fetchImagePullSecrets", () => {
     const secret1 = {
       type: "kubernetes.io/dockerconfigjson",
     };
-    const secret2 = {
-      type: "Opaque",
-    };
     Secret.list = jest.fn().mockReturnValue({
-      items: [secret1, secret2],
+      items: [secret1],
     });
     const expectedActions = [
       {

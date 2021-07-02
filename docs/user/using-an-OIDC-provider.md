@@ -9,7 +9,7 @@ For a complete worked example of this process on a specific Kubernetes environme
 
 ## Pre-requisites
 
-For this guide we assume that you have a Kubernetes cluster that is properly configured to use an OIDC Identity Provider (IdP) to handle the authentication to your cluster. You can read [more information about the Kubernetes API server's configuration options for OIDC](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens). This allows that the Kubernetes API server itself to trust tokens from the identity provider. Some hosted Kubernetes services are already configured to accept accept access_tokens from their identity provider as bearer tokens (see GKE below). Alternatively, if you do not have access to configure your cluster's API server, you can [install and configure Pinniped in your cluster to trust your identity provider and configure Kubeapps to proxy requests via Pinniped](./using-an-OIDC-provider-with-pinniped.md).
+For this guide, we assume that you have a Kubernetes cluster that is properly configured to use an OIDC Identity Provider (IdP) to handle the authentication to your cluster. You can read [more information about the Kubernetes API server's configuration options for OIDC](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens). This allows that the Kubernetes API server itself to trust tokens from the identity provider. Some hosted Kubernetes services are already configured to accept access_tokens from their identity provider as bearer tokens (see GKE below). Alternatively, if you do not have access to configure your cluster's API server, you can [install and configure Pinniped in your cluster to trust your identity provider and configure Kubeapps to proxy requests via Pinniped](./using-an-OIDC-provider-with-pinniped.md).
 
 There are several Identity Providers (IdP) that can be used in a Kubernetes cluster. The steps of this guide have been validated using the following providers:
 
@@ -49,7 +49,93 @@ For Dex, you can find the parameters that you need to set in the configuration (
 
 ### Azure Active Directory
 
-For setting up an Azure Kubernetes cluster (aks) with Azure Active Directory you can follow [this guide](https://docs.microsoft.com/en-us/azure/aks/aad-integration). At the end of the tutorial you should have an Active Directory Application (Server). That's the Application from which we will get the needed parameters.
+#### AKS-managed Azure Active Directory
+
+This setup assumes that you are using the [AKS-managed Azure AD integration](https://docs.microsoft.com/en-us/azure/aks/managed-aad). Note that this is incompatible with the legacy AAD. We will use the `v2` token version instead of `v1`.
+
+> If you really need to use `v1` tokens, please let drop us an issue and let us know your use case.
+
+Please refer to the [official docs](https://docs.microsoft.com/en-us/azure/aks/managed-aad) in case of doubt, here we just highlight some important steps during the configuration that will be required in Kubeapps.
+
+First, you need to verify that you have `AKS-managed Azure Active Directory: Enabled`.
+
+![Enabled AKS-managed Azure Active Directory](../img/azure-00.png)
+
+Then, you have to register an Application. Go to `App registrations` and click on `Register an application`. Enter a `Name` (any name is ok) and a `Redirect URI` (it should be `https://<YOUR_KUBEAPPS_DOMAIN>/oauth2/callback` unless you have manually changed it).
+
+> Replace `<YOUR_KUBEAPPS_DOMAIN>` with your actual Kubeapps domain. Note that you will need to use `https` instead of `http`.
+
+![Registering an Application](../img/azure-01.png)
+
+Once you got your Application created, click `Overview` to see the `Application (client) ID` and the `Directory (tenant) ID`. You will need these values later.
+
+![Application overview](../img/azure-02.png)
+
+The next step is to create a secret for the Application. Click on `Certificates & secrets` and then on `New client secret`.
+
+![Creating secret screen](../img/azure-03.png)
+
+Fill the `Description` and `Expires` fields according to your preferences.
+
+![Creating the secret](../img/azure-04.png)
+
+Next, the `Value` of the secret will appear and you will be able to copy it. You will need this value later.
+
+![Retrieving the secret value](../img/azure-05.png)
+
+The following step is to define the permissions that the Application will need. To do so, go to `API permissions` and click `Add a permission`.
+
+![Add permissions screen](../img/azure-06.png)
+
+Then, in the `APIs my organization uses` enter this value `6dae42f8-4368-4678-94ff-3960e28e3630`. This is a fixed Application ID corresponding to the _Azure Kubernetes Service AAD Server_ globally provided by Azure.
+
+> You can also get this Application ID (`6dae42f8-4368-4678-94ff-3960e28e3630`) by executing `az ad sp list --display-name "Azure Kubernetes Service AAD Server"` and inspecting the `appId` value.
+
+![Selecting the permissions](../img/azure-07.png)
+
+Next, select the `user.read` permission and click `Add permissions`.
+
+![Selecting user.read permission](../img/azure-08.png)
+
+Then, go to `Manifest` and change `accessTokenAcceptedVersion` from `null` to `2`. It will make the Application generate `v2` tokens instead of `v1`.
+
+![Editing the manifest](../img/azure-09.png)
+
+At the end of these steps, you will have created an application, generated a secret, granted it with `6dae42f8-4368-4678-94ff-3960e28e3630/user.read` permissions and changed the token version to `v2`. You also will have the following information:
+
+- `Application (client) ID`, for instance, `<MY-APPLICATION-ID>`.
+- `Application secret`, for instance, `<MY-SECRET>`.
+- `Directory (tenant) ID`, for instance, `<MY-TENANT-ID>`.
+
+The next step is just configuring Kubeapps to use all these values.
+
+```yaml
+frontend:
+  proxypassAccessTokenAsBearer: true # required to pass the access_token instead of the id_token
+authProxy:
+  enabled: true
+  cookieSecret: <MY-COOKIE-SECRET> # See https://oauth2-proxy.github.io/oauth2-proxy/docs/configuration/overview/#generating-a-cookie-secret
+  provider: oidc
+  clientID: <MY-APPLICATION-ID>
+  clientSecret: <MY-SECRET>
+  additionalFlags:
+    - --oidc-issuer-url=https://login.microsoftonline.com/<MY-TENANT-ID>/v2.0 # required for azure
+    - --scope=openid email 6dae42f8-4368-4678-94ff-3960e28e3630/user.read # required for azure, exactly this string without modification
+```
+
+> Subsitute `<MY-COOKIE-SECRET>`, `<MY-APPLICATION-ID>`,`<MY-SECRET>` and `<MY-TENANT-ID>` with your values.
+
+We highlight here:
+
+- The issuer is `https://login.microsoftonline.com/<MY-TENANT-ID>/v2.0` (replacing `<MY-TENANT-ID>` with your own `Directory (tenant) ID`), since we are using v2 tokens.
+- The scope is exactly `openid email 6dae42f8-4368-4678-94ff-3960e28e3630/user.read`.
+  - Besides using the `openid` and `email` scopes, we also need `6dae42f8-4368-4678-94ff-3960e28e3630/user.read`. This one corresponds to the Application ID of the global _Azure Kubernetes Service AAD Server_. This way, you will able to get the user's email to get access to the protected resource that is AKS.
+
+> In `v1` tokens, you had to pass this value as part of the `--resource=6dae42f8-4368-4678-94ff-3960e28e3630` flag, but in `v2` tokens, this claim is performed just using the scope.
+
+#### Azure Active Directory integration (legacy)
+
+For setting up an Azure Kubernetes cluster (aks) with Azure Active Directory (legacy) you can follow [this guide](https://docs.microsoft.com/en-us/azure/aks/azure-ad-integration-cli). At the end of the tutorial you should have an Active Directory Application (Server). That's the Application from which we will get the needed parameters.
 
 - Client-ID: Azure Active Directory server Application ID.
 - Client-secret: A "Password" Key of the server Application.
@@ -67,10 +153,12 @@ In the case of Google we can use an OAuth 2.0 client ID. You can find more infor
 
 ### VMware Cloud Services
 
+Note: there is a [more detailed guide on how to use VMware Cloud Services in this document](../step-by-step/kubeapps-on-tkg/step-1.md#step-12-configure-an-oidc-provider).
+
 Login to VMware Cloud Services and select the organization which you want to use.
 
 1. Select View Organization (under Organization settings of the org menu),
-  ![Copying the bearer token](../img/csp-view-organization.png)
+   ![Copying the bearer token](../img/csp-view-organization.png)
 2. Click on the OAuth Apps tab,
 3. Click Create App, select Web App and continue,
 4. Enter a name and description for your OAuth app,
@@ -80,16 +168,16 @@ Login to VMware Cloud Services and select the organization which you want to use
 
 You will now see a dialog with the app id and secret. Click on the Download JSON option as there is other useful info in the JSON.
 
-Your Kubernetes cluster's API server (or alternatively, your [Pinniped JWTAuthenticator](./using-an-OIDC-provider-with-pinniped.md)) will need to be configured with the following options (the staging VMware cloud services issuer URL is used in the example below):
+Your Kubernetes cluster's API server (or alternatively, your [Pinniped JWTAuthenticator](./using-an-OIDC-provider-with-pinniped.md)) will need to be configured with the following options (the production VMware cloud services issuer URL is used in the example below):
 
-```json
-    kind: ClusterConfiguration
-    apiServer:
-      extraArgs:
-        oidc-issuer-url: https://gaz-preview.csp-vidm-prod.com
-        oidc-client-id: <your client id from above>
-        oidc-username-claim: email
-        oidc-groups-claim: group_names
+```yaml
+kind: ClusterConfiguration
+apiServer:
+  extraArgs:
+    oidc-issuer-url: https://gaz.csp-vidm-prod.com # the staging endpoint is 'https://gaz-preview.csp-vidm-prod.com'
+    oidc-client-id: <your client id from above>
+    oidc-username-claim: email
+    oidc-groups-claim: group_names
 ```
 
 Once your cluster is running, you can then deploy Kubeapps with the following additional values:
@@ -101,15 +189,21 @@ authProxy:
   clientID: <your app id>
   clientSecret: <your app secret>
   cookieSecret: <your random seed string for secure cookies>
+  scope: openid email group_names
   additionalFlags:
-    # For staging VMware Cloud Services issuer url is https://console-stg.cloud.vmware.com/csp/gateway/am/api
-    # For production, use https://console.cloud.vmware.com/csp/gateway/am/api
-    - --oidc-issuer-url=https://console-stg.cloud.vmware.com/csp/gateway/am/api
-    - --scope=openid email group_names
-    - --insecure-oidc-skip-issuer-verification
+    # VMware Cloud Services has different endpoints for production and staging:
+    # To use the staging endpoints, replace:
+    # 'gaz.csp-vidm-prod.com' with 'gaz-preview.csp-vidm-prod.com'
+    # 'console.cloud.vmware.com' with 'console-stg.cloud.vmware.com/'
+    - --skip-oidc-discovery=true
+    - --oidc-issuer-url=https://gaz.csp-vidm-prod.com
+    - --login-url=https://console.cloud.vmware.com/csp/gateway/discovery
+    - --redeem-url=https://console.cloud.vmware.com/csp/gateway/am/api/auth/token
+    - --oidc-jwks-url=https://console.cloud.vmware.com/csp/gateway/am/api/auth/token-public-key?format=jwks
 ```
 
-Note: VMware Cloud Services has an issuer URL specific to organizations which is required for the Kubeapps auth proxy configuration above, but if you check the [`.well-known/openid-configuration`](https://console-stg.cloud.vmware.com/csp/gateway/am/api/.well-known/openid-configuration) you will see that it identifies a different (parent) issuer, `https://gaz-preview.csp-vidm-prod.com`. It is for this reason that the `--insecure-oidc-skip-issuer-verification` option is required above. For the same reason, the OIDC `id_token`s that are minted specify the parent issuer as well, which is why the Kubernetes API server config above uses that.
+Note: VMware Cloud Services has an issuer URL specific to organizations which is required for the Kubeapps auth proxy configuration above, but if you check the [`.well-known/openid-configuration`](https://console-stg.cloud.vmware.com/csp/gateway/am/api/.well-known/openid-configuration) you will see that it identifies a different (parent) issuer, `https://gaz.csp-vidm-prod.com`.
+It is for this reason that the `--skip-oidc-discovery=true` option is required above and we need to manually set each `oidc-issuer`, `login-url`, `redeem-url` and `oidc-jwks-url` instead of relying on the automatic discovery.
 
 Once deployed, if you experience issues logging in, please refer to the [Debugging auth failures when using OIDC](#debugging-auth-failures-when-using-oidc) section below.
 
@@ -171,8 +265,8 @@ helm install kubeapps bitnami/kubeapps \
 Google Kubernetes Engine does not allow an OIDC IDToken to be used to authenticate requests to the managed API server, instead requiring the standard OAuth2 access token.
 For this reason, when deploying Kubeapps on GKE we need to ensure that
 
-* The scopes required by the user to interact with cloud platform are included, and
-* The Kubeapps frontend uses the OAuth2 `access_key` as the bearer token when communicating with the managed Kubernetes API
+- The scopes required by the user to interact with cloud platform are included, and
+- The Kubeapps frontend uses the OAuth2 `access_key` as the bearer token when communicating with the managed Kubernetes API
 
 Note that using the custom `google` provider here enables google to prompt the user for consent for the specific permissions requested in the scopes below, in a user-friendly way. You can also use the `oidc` provider but in this case the user is not prompted for the extra consent:
 
@@ -184,7 +278,8 @@ helm install kubeapps bitnami/kubeapps \
   --set authProxy.clientID=my-client-id.apps.googleusercontent.com \
   --set authProxy.clientSecret=my-client-secret \
   --set authProxy.cookieSecret=$(echo "not-good-secret" | base64) \
-  --set authProxy.additionalFlags="{--cookie-secure=false,--scope=https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform}" \
+  --set authProxy.scope="https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform" \
+  --set authProxy.additionalFlags="{--cookie-secure=false}" \
   --set frontend.proxypassAccessTokenAsBearer=true
 ```
 
@@ -226,6 +321,7 @@ spec:
         - -client-secret=$AUTH_PROXY_CLIENT_SECRET
         - -oidc-issuer-url=$AUTH_PROXY_DISCOVERY_URL
         - -cookie-secret=$AUTH_PROXY_COOKIE_SECRET
+        - -cookie-refresh=2m
         - -upstream=http://localhost:8080/
         - -http-address=0.0.0.0:3000
         - -email-domain="*"
@@ -292,7 +388,7 @@ EOF
 
 ## Debugging auth failures when using OIDC
 
-If you find after configuring your OIDC/OAuth2 setup following the above instructions, that although you can successfully authenticate with your provider you are nonetheless unable to login to Kubeapps but instead see a 403 or 401 request in the browser's debugger, then you will need to investigate *why* the Kubernetes cluster is not accepting your credential.
+If you find after configuring your OIDC/OAuth2 setup following the above instructions, that although you can successfully authenticate with your provider you are nonetheless unable to login to Kubeapps but instead see a 403 or 401 request in the browser's debugger, then you will need to investigate _why_ the Kubernetes cluster is not accepting your credential.
 
 ### Viewing the JWT id token
 
@@ -307,7 +403,7 @@ Once the deployment runs a new container with the extra option, Kubeapps will th
 
 To view the token, in your browser debugger's Network tab, watch for the request to `/api/clusters/default` or similar which will have a 40X status. Click on this request to view the headers and in the Response headers look for the `Authorization` header. The bearer token of the value will be the base64-encoded `id_token`. Copy the token as shown:
 
-  ![Copying the bearer token](../img/oidc-debug-copy-bearer-token.png)
+![Copying the bearer token](../img/oidc-debug-copy-bearer-token.png)
 
 ### Testing the JWT Token directly with your Kubernetes cluster
 
@@ -333,7 +429,7 @@ You should see the same status that you saw in the browser (as Kubeapps is using
 ### Checking your Kubernetes cluster OIDC options
 
 Once you can reproduce the issue, there are a couple of possibilities for the cause which commonly trip people up.
-One common issue is that the Kubernetes cluster's api server is not configured for oidc (some people don't realise this is necessary). This is easy to check by grepping for `oidc` in the api server pod output, for example, if your cluster *is* configured for OpenID Connect, you should see something like:
+One common issue is that the Kubernetes cluster's api server is not configured for oidc (some people don't realise this is necessary). This is easy to check by grepping for `oidc` in the api server pod output, for example, if your cluster _is_ configured for OpenID Connect, you should see something like:
 
 ```bash
 $ kubectl -n kube-system get po -l component=kube-apiserver -o yaml | grep oidc
@@ -353,3 +449,17 @@ Another common point of confusion is the `--oidc-username-prefix` option specifi
 ### Checking the logs of your Kubernetes API server
 
 Finally, if none of the above are relevant to your issue, you can check the logs of the Kubernetes API server deployment for OIDC-related lines at the time of your login attempt. These may show a configuration issue with the API server itself.
+
+### User automatically logged out from Kubeapps Console
+
+When using the default auth proxy, some users may experience the behavior where they are automatically logged out from the console.
+Prior to the Kubeapps chart version 7.1.0, the auth proxy configuration did not include a default `--cookie-refresh` value to refresh the access/openid token and so the console will logout once the token expires. In the case of Keycloak for example, this can happen quickly as the default access token expiration is 5m.
+
+To avoid this issue, you can do one of the following:
+
+- upgrade the Kubeapps chart to version 7.1.0+ which sets a default of `--cookie-refresh=2m` and exposes the value in the chart values as `authProxy.cookieRefresh`.
+- update Kubeapps by adding the option `--cookie-refresh=2m` to `authProxy.additionalFlags`.
+
+The duration for the refresh must be less than the access/openid expiration time configured in the OAuth2/OIDC provider.
+
+**Note**: If you have configured a provider other than `oidc` for oauth2-proxy, the issue may still occur even after upgrading or updating Kubeapps as OAuth2 Proxy does not support cookie-refresh for all providers. See [OAuth2 Proxy Configuration Overview](https://oauth2-proxy.github.io/oauth2-proxy/docs/configuration/overview/#footnote1) for the list of supported providers.

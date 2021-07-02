@@ -22,6 +22,7 @@ interface IAppRepoFormProps {
     name: string,
     url: string,
     type: string,
+    description: string,
     authHeader: string,
     dockerRegCreds: string,
     customCA: string,
@@ -29,6 +30,7 @@ interface IAppRepoFormProps {
     registrySecrets: string[],
     ociRepositories: string[],
     skipTLS: boolean,
+    passCredentials: boolean,
     filter?: IAppRepositoryFilter,
   ) => Promise<boolean>;
   onAfterInstall?: () => void;
@@ -57,17 +59,23 @@ export function AppRepoForm(props: IAppRepoFormProps) {
   const [authHeader, setAuthHeader] = useState("");
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [url, setURL] = useState("");
   const [customCA, setCustomCA] = useState("");
   const [syncJobPodTemplate, setSyncJobTemplate] = useState("");
   const [type, setType] = useState(TYPE_HELM);
   const [ociRepositories, setOCIRepositories] = useState("");
   const [skipTLS, setSkipTLS] = useState(!!repo?.spec?.tlsInsecureSkipVerify);
+  const [passCredentials, setPassCredentials] = useState(!!repo?.spec?.passCredentials);
   const [filterNames, setFilterNames] = useState("");
   const [filterRegex, setFilterRegex] = useState(false);
   const [filterExclude, setFilterExclude] = useState(false);
   const [selectedImagePullSecret, setSelectedImagePullSecret] = useState("");
   const [validated, setValidated] = useState(undefined as undefined | boolean);
+
+  useEffect(() => {
+    dispatch(actions.repos.fetchImagePullSecrets(namespace));
+  }, [dispatch, namespace]);
 
   const {
     repos: {
@@ -93,41 +101,56 @@ export function AppRepoForm(props: IAppRepoFormProps) {
       setName(repo.metadata.name);
       setURL(repo.spec?.url || "");
       setType(repo.spec?.type || "");
+      setDescription(repo.spec?.description || "");
       setSyncJobTemplate(
         repo.spec?.syncJobPodTemplate ? yaml.dump(repo.spec?.syncJobPodTemplate) : "",
       );
       setOCIRepositories(repo.spec?.ociRepositories?.join(", ") || "");
       setSkipTLS(!!repo.spec?.tlsInsecureSkipVerify);
+      setPassCredentials(!!repo.spec?.passCredentials);
       if (repo.spec?.filterRule?.jq) {
         const { names, regex, exclude } = toParams(repo.spec.filterRule);
         setFilterRegex(regex);
         setFilterExclude(exclude);
         setFilterNames(names);
       }
-      if (secret) {
-        if (secret.data["ca.crt"]) {
-          setCustomCA(atob(secret.data["ca.crt"]));
+      if (repo.spec?.auth?.customCA || repo.spec?.auth?.header) {
+        const secrets = [];
+        if (repo.spec?.auth?.customCA) {
+          secrets.push(repo.spec.auth.customCA.secretKeyRef.name);
         }
-        if (secret.data.authorizationHeader) {
-          if (authHeader.startsWith("Basic")) {
-            const userPass = atob(authHeader.split(" ")[1]).split(":");
-            setUser(userPass[0]);
-            setPassword(userPass[1]);
-            setAuthMethod(AUTH_METHOD_BASIC);
-          } else if (authHeader.startsWith("Bearer")) {
-            setToken(authHeader.split(" ")[1]);
-            setAuthMethod(AUTH_METHOD_BEARER);
-          } else {
-            setAuthMethod(AUTH_METHOD_CUSTOM);
-            setAuthHeader(atob(secret.data.authorizationHeader));
-          }
+        if (repo.spec?.auth?.header && !secrets.includes(repo.spec.auth.header.secretKeyRef.name)) {
+          secrets.push(repo.spec.auth.header.secretKeyRef.name);
         }
-        if (secret.data[".dockerconfigjson"]) {
-          setAuthMethod(AUTH_METHOD_REGISTRY_SECRET);
-        }
+        secrets.forEach(s => dispatch(actions.repos.fetchRepoSecret(namespace, s)));
       }
     }
-  }, [repo, secret, authHeader]);
+  }, [repo, namespace, dispatch]);
+
+  useEffect(() => {
+    if (secret) {
+      if (secret.data["ca.crt"]) {
+        setCustomCA(atob(secret.data["ca.crt"]));
+      }
+      if (secret.data.authorizationHeader) {
+        if (authHeader.startsWith("Basic")) {
+          const userPass = atob(authHeader.split(" ")[1]).split(":");
+          setUser(userPass[0]);
+          setPassword(userPass[1]);
+          setAuthMethod(AUTH_METHOD_BASIC);
+        } else if (authHeader.startsWith("Bearer")) {
+          setToken(authHeader.split(" ")[1]);
+          setAuthMethod(AUTH_METHOD_BEARER);
+        } else {
+          setAuthMethod(AUTH_METHOD_CUSTOM);
+          setAuthHeader(atob(secret.data.authorizationHeader));
+        }
+      }
+      if (secret.data[".dockerconfigjson"]) {
+        setAuthMethod(AUTH_METHOD_REGISTRY_SECRET);
+      }
+    }
+  }, [secret, authHeader]);
 
   const handleInstallClick = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -167,6 +190,7 @@ export function AppRepoForm(props: IAppRepoFormProps) {
           customCA,
           ociRepoList,
           skipTLS,
+          passCredentials,
         ),
       );
       setValidated(currentlyValidated);
@@ -180,6 +204,7 @@ export function AppRepoForm(props: IAppRepoFormProps) {
         name,
         finalURL,
         type,
+        description,
         finalHeader,
         dockerRegCreds,
         customCA,
@@ -187,6 +212,7 @@ export function AppRepoForm(props: IAppRepoFormProps) {
         selectedImagePullSecret.length ? [selectedImagePullSecret] : [],
         ociRepoList,
         skipTLS,
+        passCredentials,
         filter,
       );
       if (success && onAfterInstall) {
@@ -196,6 +222,8 @@ export function AppRepoForm(props: IAppRepoFormProps) {
   };
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value);
+  const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setDescription(e.target.value);
   const handleURLChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setURL(e.target.value);
     setValidated(undefined);
@@ -238,6 +266,10 @@ export function AppRepoForm(props: IAppRepoFormProps) {
   };
   const handleSkipTLSChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSkipTLS(!skipTLS);
+    setValidated(undefined);
+  };
+  const handlePassCredentialsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassCredentials(!passCredentials);
     setValidated(undefined);
   };
   const handleFilterNames = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -299,6 +331,17 @@ export function AppRepoForm(props: IAppRepoFormProps) {
             value={url}
             onChange={handleURLChange}
             required={true}
+          />
+        </CdsInput>
+        <CdsInput>
+          <label> Description (optional)</label>
+          <input
+            id="kubeapps-repo-description"
+            type="text"
+            placeholder="Description of the repository"
+            value={description}
+            onChange={handleDescriptionChange}
+            required={false}
           />
         </CdsInput>
 
@@ -514,6 +557,17 @@ export function AppRepoForm(props: IAppRepoFormProps) {
             onChange={handleSkipTLSChange}
           />
         </CdsCheckbox>
+        <CdsCheckbox className="ca-skip-tls">
+          <label className="clr-control-label">
+            Pass Credentials to 3rd party URLs (Icon and Tarball files)
+          </label>
+          <input
+            id="kubeapps-repo-pass-credentials"
+            type="checkbox"
+            checked={passCredentials}
+            onChange={handlePassCredentialsChange}
+          />
+        </CdsCheckbox>
 
         <CdsTextarea layout="vertical">
           <label>Custom Sync Job Template (optional)</label>
@@ -567,7 +621,7 @@ export function AppRepoForm(props: IAppRepoFormProps) {
           An error occurred while updating the repository: {updateError.message}
         </Alert>
       )}
-      <div className="clr-form-separator">
+      <div className="margin-t-xl">
         <CdsButton disabled={validating} onClick={install}>
           {validating
             ? "Validating..."

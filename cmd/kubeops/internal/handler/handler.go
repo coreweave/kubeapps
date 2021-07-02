@@ -38,13 +38,15 @@ type dependentHandler func(cfg Config, w http.ResponseWriter, req *http.Request,
 
 // Options represents options that can be created without a bearer token, i.e. once at application startup.
 type Options struct {
-	ListLimit         int
-	Timeout           int64
-	UserAgent         string
-	KubeappsNamespace string
-	ClustersConfig    kube.ClustersConfig
-	Burst             int
-	QPS               float32
+	ListLimit              int
+	Timeout                int64
+	UserAgent              string
+	KubeappsNamespace      string
+	ClustersConfig         kube.ClustersConfig
+	Burst                  int
+	QPS                    float32
+	NamespaceHeaderName    string
+	NamespaceHeaderPattern string
 }
 
 // Config represents data needed by each handler to be able to create Helm 3 actions.
@@ -99,7 +101,7 @@ func WithHandlerConfig(storageForDriver agent.StorageForDriver, options Options)
 				return
 			}
 
-			kubeHandler, err := kube.NewHandler(options.KubeappsNamespace, options.Burst, options.QPS, options.ClustersConfig)
+			kubeHandler, err := kube.NewHandler(options.KubeappsNamespace, options.NamespaceHeaderName, options.NamespaceHeaderPattern, options.Burst, options.QPS, options.ClustersConfig)
 			if err != nil {
 				log.Errorf("Failed to create handler: %v", err)
 				response.NewErrorResponse(http.StatusInternalServerError, authUserError).Write(w)
@@ -178,7 +180,7 @@ func CreateRelease(cfg Config, w http.ResponseWriter, req *http.Request, params 
 		return
 	}
 	// TODO: currently app repositories are only supported on the cluster on which Kubeapps is installed. #1982
-	appRepo, caCertSecret, authSecret, err := chart.GetAppRepoAndRelatedSecrets(chartDetails.AppRepositoryResourceName, chartDetails.AppRepositoryResourceNamespace, cfg.KubeHandler, cfg.Token, cfg.Options.ClustersConfig.KubeappsClusterName, cfg.Options.KubeappsNamespace)
+	appRepo, caCertSecret, authSecret, err := chart.GetAppRepoAndRelatedSecrets(chartDetails.AppRepositoryResourceName, chartDetails.AppRepositoryResourceNamespace, cfg.KubeHandler, cfg.Token, cfg.Options.ClustersConfig.KubeappsClusterName, cfg.Options.KubeappsNamespace, cfg.Options.ClustersConfig.KubeappsClusterName)
 	if err != nil {
 		returnErrMessage(fmt.Errorf("unable to get app repository %q: %v", chartDetails.AppRepositoryResourceName, err), w)
 		return
@@ -231,7 +233,7 @@ func upgradeRelease(cfg Config, w http.ResponseWriter, req *http.Request, params
 		returnErrMessage(err, w)
 		return
 	}
-	appRepo, caCertSecret, authSecret, err := chart.GetAppRepoAndRelatedSecrets(chartDetails.AppRepositoryResourceName, chartDetails.AppRepositoryResourceNamespace, cfg.KubeHandler, cfg.Token, cfg.Cluster, cfg.Options.KubeappsNamespace)
+	appRepo, caCertSecret, authSecret, err := chart.GetAppRepoAndRelatedSecrets(chartDetails.AppRepositoryResourceName, chartDetails.AppRepositoryResourceNamespace, cfg.KubeHandler, cfg.Token, cfg.Cluster, cfg.Options.KubeappsNamespace, cfg.Options.ClustersConfig.KubeappsClusterName)
 	if err != nil {
 		returnErrMessage(fmt.Errorf("unable to get app repository %q: %v", chartDetails.AppRepositoryResourceName, err), w)
 		return

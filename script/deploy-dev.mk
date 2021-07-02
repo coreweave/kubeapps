@@ -27,9 +27,12 @@ deploy-dependencies: deploy-dex deploy-openldap devel/localhost-cert.pem
 	kubectl --kubeconfig=${CLUSTER_CONFIG} -n kubeapps create secret tls localhost-tls \
 		--key ./devel/localhost-key.pem \
 		--cert ./devel/localhost-cert.pem
+	kubectl --kubeconfig=${CLUSTER_CONFIG} -n kubeapps create secret generic postgresql-db \
+		--from-literal=postgresql-postgres-password=dev-only-fake-password \
+		--from-literal=postgresql-password=dev-only-fake-password
 
-deploy-dev-kubeapps: 
-	helm --kubeconfig=${CLUSTER_CONFIG} install kubeapps ./chart/kubeapps --namespace kubeapps --create-namespace \
+deploy-dev-kubeapps:
+	helm --kubeconfig=${CLUSTER_CONFIG} upgrade --install kubeapps ./chart/kubeapps --namespace kubeapps --create-namespace \
 		--values ./docs/user/manifests/kubeapps-local-dev-values.yaml \
 		--values ./docs/user/manifests/kubeapps-local-dev-auth-proxy-values.yaml \
 		--values ./docs/user/manifests/kubeapps-local-dev-additional-kind-cluster.yaml
@@ -46,6 +49,15 @@ deploy-dev: deploy-dependencies deploy-dev-kubeapps
 
 reset-dev-kubeapps:
 	kubectl delete namespace --wait kubeapps
+
+# The kapp-controller support for the new Package and PackageRepository CRDs is currently
+# only available in an alpha release.
+deploy-kapp-controller:
+	kubectl --kubeconfig=${CLUSTER_CONFIG} apply -f https://raw.githubusercontent.com/vmware-tanzu/carvel-kapp-controller/develop/alpha-releases/v0.20.0-rc.1.yml
+
+# Add the flux controllers used for testing the kubeapps-apis integration.
+deploy-flux-controllers:
+	kubectl --kubeconfig=${CLUSTER_CONFIG} apply -f https://github.com/fluxcd/flux2/releases/download/v0.13.4/install.yaml
 
 reset-dev:
 	helm --kubeconfig=${CLUSTER_CONFIG} -n kubeapps delete kubeapps  || true

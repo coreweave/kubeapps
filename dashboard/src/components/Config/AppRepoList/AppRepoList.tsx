@@ -20,12 +20,13 @@ import { AppRepoControl } from "./AppRepoControl";
 import { AppRepoDisabledControl } from "./AppRepoDisabledControl";
 import "./AppRepoList.css";
 import { AppRepoRefreshAllButton } from "./AppRepoRefreshAllButton";
+import Tooltip from "components/js/Tooltip";
 
 function AppRepoList() {
   const dispatch = useDispatch();
   const location = useLocation();
   const {
-    repos: { errors, isFetching, repos, repoSecrets },
+    repos: { errors, isFetchingElem, repos, repoSecrets },
     clusters: { clusters, currentCluster },
     config: { kubeappsCluster, kubeappsNamespace },
   } = useSelector((state: IStoreState) => state);
@@ -85,20 +86,10 @@ function AppRepoList() {
     Kube.canI(cluster, "kubeapps.com", "apprepositories", "list", "").then(allowed =>
       setCanSetAllNS(allowed),
     );
-    Kube.canI(
-      kubeappsCluster,
-      "kubeapps.com",
-      "apprepositories",
-      "update",
-      kubeappsNamespace,
-    ).then(allowed => setCanEditGlobalRepos(allowed));
+    Kube.canI(kubeappsCluster, "kubeapps.com", "apprepositories", "update", kubeappsNamespace).then(
+      allowed => setCanEditGlobalRepos(allowed),
+    );
   }, [cluster, kubeappsCluster, kubeappsNamespace]);
-
-  useEffect(() => {
-    if (repos) {
-      dispatch(actions.repos.fetchImagePullSecrets(namespace));
-    }
-  }, [dispatch, repos, namespace]);
 
   const globalRepos: IAppRepository[] = [];
   const namespaceRepos: IAppRepository[] = [];
@@ -118,16 +109,7 @@ function AppRepoList() {
   const getTableData = (targetRepos: IAppRepository[], disableControls: boolean) => {
     return targetRepos.map(repo => {
       return {
-        name: (
-          <Link
-            to={
-              app.catalog(cluster, repo.metadata.namespace) +
-              filtersToQuery({ [filterNames.REPO]: [repo.metadata.name] })
-            }
-          >
-            {repo.metadata.name}
-          </Link>
-        ),
+        name: getRepoNameLinkAndTooltip(cluster, repo),
         url: repo.spec?.url,
         accessLevel: repo.spec?.auth?.header ? "Private" : "Public",
         namespace: repo.metadata.namespace,
@@ -208,7 +190,7 @@ function AppRepoList() {
               <LoadingWrapper
                 className="margin-t-xxl"
                 loadingText="Fetching Application Repositories..."
-                loaded={!isFetching}
+                loaded={!isFetchingElem.repositories}
               >
                 <h3>Global Repositories:</h3>
                 <p>Global repositories are available for all Kubeapps users.</p>
@@ -248,6 +230,38 @@ function AppRepoList() {
         </div>
       )}
     </>
+  );
+}
+
+function getRepoNameLinkAndTooltip(cluster: string, repo: IAppRepository) {
+  const linkObj = (
+    <Link
+      to={
+        app.catalog(cluster, repo.metadata.namespace) +
+        filtersToQuery({ [filterNames.REPO]: [repo.metadata.name] })
+      }
+    >
+      {repo.metadata.name}
+    </Link>
+  );
+  return repo.spec?.description ? (
+    <div className="color-icon-info">
+      <span className="tooltip-wrapper">
+        {linkObj}
+        <Tooltip
+          label="pending-tooltip"
+          id={`${repo.metadata.name}-pending-tooltip`}
+          icon="info-circle"
+          position="bottom-left"
+          small={true}
+          iconProps={{ solid: true, size: "sm" }}
+        >
+          {repo.spec?.description}
+        </Tooltip>
+      </span>
+    </div>
+  ) : (
+    linkObj
   );
 }
 
