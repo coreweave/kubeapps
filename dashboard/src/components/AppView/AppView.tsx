@@ -31,6 +31,7 @@ import AppSecrets from "./AppSecrets";
 import AppValues from "./AppValues/AppValues";
 import ChartInfo from "./ChartInfo/ChartInfo";
 import ResourceTabs from "./ResourceTabs";
+import CustomAppView from "./CustomAppView";
 
 export interface IAppViewResourceRefs {
   deployments: ResourceRef[];
@@ -137,6 +138,7 @@ export default function AppView() {
   const {
     apps: { error, selected: app },
     kube: { kinds },
+    config: { customAppViews },
   } = useSelector((state: IStoreState) => state);
   useEffect(() => {
     dispatch(actions.apps.getAppWithUpdateInfo(cluster, namespace, releaseName));
@@ -182,6 +184,12 @@ export default function AppView() {
   const { services, ingresses, deployments, statefulsets, daemonsets, secrets, otherResources } =
     resourceRefs;
   const icon = get(app, "chart.metadata.icon", placeholder);
+
+  // If chart is white listed,load custom view from external bundle
+  if (app?.chart?.metadata?.name && customAppViews.includes(app?.chart?.metadata?.name)) {
+    return <CustomAppView resourceRefs={resourceRefs} app={app} />;
+  }
+
   return (
     <section>
       <PageHeader
