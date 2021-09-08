@@ -117,7 +117,7 @@ function parseResources(
   return result;
 }
 
-interface IRouteParams {
+export interface IRouteParams {
   cluster: string;
   namespace: string;
   releaseName: string;

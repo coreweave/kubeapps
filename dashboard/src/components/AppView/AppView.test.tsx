@@ -9,14 +9,67 @@ import { MemoryRouter, Route } from "react-router";
 import { hapi } from "shared/hapi/release";
 import ResourceRef from "shared/ResourceRef";
 import { defaultStore, getStore, mountWrapper } from "shared/specs/mountWrapper";
-import { DeleteError, FetchError, IResource } from "shared/types";
+import { DeleteError, FetchError, IRelease, IResource } from "shared/types";
 import AccessURLTable from "./AccessURLTable/AccessURLTable";
 import AppNotes from "./AppNotes";
-import AppViewComponent from "./AppView";
+import AppViewComponent, { IAppViewResourceRefs } from "./AppView";
 import ChartInfo from "./ChartInfo/ChartInfo";
 import ResourceTabs from "./ResourceTabs";
-import { DEFAULT_CUSTOM_APP_PROPS } from "./CustomAppView/CustomAppView.test";
 import CustomAppView from "./CustomAppView/CustomAppView";
+
+const DEFAULT_CUSTOM_APP_PROPS = {
+  app: {
+    chart: {
+      metadata: {
+        name: "bar",
+        appVersion: "0.0.1",
+        description: "test chart",
+        icon: "icon.png",
+        version: "1.0.0",
+      },
+    },
+    name: "foo",
+  } as IRelease,
+  resourceRefs: {
+    ingresses: [],
+    deployments: [
+      {
+        cluster: "default",
+        apiVersion: "apps/v1",
+        kind: "Deployment",
+        plural: "deployments",
+        namespaced: true,
+        name: "ssh-server-example",
+        namespace: "demo-namespace",
+      },
+    ],
+    statefulsets: [],
+    daemonsets: [],
+    otherResources: [
+      {
+        cluster: "default",
+        apiVersion: "v1",
+        kind: "PersistentVolumeClaim",
+        plural: "persistentvolumeclaims",
+        namespaced: true,
+        name: "ssh-server-example-root-pv-claim",
+        namespace: "demo-namespace",
+      },
+    ],
+    services: [
+      {
+        cluster: "default",
+        apiVersion: "v1",
+        kind: "Service",
+        plural: "services",
+        namespaced: true,
+        name: "ssh-server-example",
+        namespace: "demo-namespace",
+      },
+    ],
+    secrets: [],
+  } as unknown as IAppViewResourceRefs,
+};
 
 const routeParams = {
   cluster: "cluster-1",
