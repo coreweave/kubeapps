@@ -1,0 +1,12 @@
+image: docker:stable
+
+stages:
+  - build
+
+build-dashboard:
+  stage: build
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $CI_COMMIT_SHA .
+    - docker push $CI_COMMIT_SHA
