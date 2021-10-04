@@ -95,7 +95,7 @@ workflows:
             - build_dashboard
             - build_pinniped_proxy
       - push_images:
-          <<: *build_on_master
+          <<: *build_always
           requires:
             - local_e2e_tests
       - release:
