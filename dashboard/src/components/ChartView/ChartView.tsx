@@ -104,7 +104,7 @@ export default function ChartView() {
   }
 
   // If package does not have a README, redirect to deployment form
-  if (!readme && config.skipAvailablePackageDetails) {
+  if (!readme) {
     return (
       <ReactRouter.Redirect
         to={app.apps.new(
