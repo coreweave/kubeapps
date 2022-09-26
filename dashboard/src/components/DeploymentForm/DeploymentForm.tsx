@@ -116,13 +116,17 @@ export default function DeploymentForm() {
   }
 
   const cloudDomain = window.location.origin.replace(/apps/g, "cloud");
+  const cookieName = window.location.origin.includes("apps.staging.coreweave")
+    ? getCookie("csrftoken_sta")
+    : getCookie("csrftoken");
+
   useEffect(() => {
     fetch(`${cloudDomain}/api/`, {
       method: "POST",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        "x-csrftoken": getCookie("csrftoken") || getCookie("csrftoken_sta") || "",
+        "x-csrftoken": cookieName || " ",
       },
       body: JSON.stringify({
         query: `
