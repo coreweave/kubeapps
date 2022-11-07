@@ -126,41 +126,47 @@ export default function DeploymentForm() {
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        "x-csrftoken": cookieName || " ",
+        "x-csrftoken": cookieName || "",
       },
       body: JSON.stringify({
         query: `
-        query CurrentUser {
-          currentUser {
-            ... on User {
-              id
-              email
-              hasPassword
-              mfaEnabled
-              firstName
-              lastName
-              organization {
-                id
-                subscribed
-                displayName
+        query User {
+          user {
+              ... on User {
+                  id
+                  email
+                  hasPassword
+                  mfaEnabled
+                  firstName
+                  lastName
+                  organization {
+                      id
+                      subscribed
+                      displayName
+                      latestSiftDecision
+                  }
+                  permissions
+                  userSettings {
+                      defaultNamespace
+                  }
+                  __typename
               }
-              permissions
-            }
-            ... on Errors {
-              code
-              errors {
-                message
-                path
+      
+              ... on Errors {
+                  code
+                  errors {
+                      message
+                      path
+                  }
               }
-            }
           }
-        }
+      }
       `,
       }),
     })
       .then(res => res.json())
       .then(result => {
-        const userPermissions = result.data.currentUser.permissions;
+        const userPermissions = result.data.user.permissions;
         if (
           userPermissions.includes(`w:ns-${namespace}:full`) ||
           (userPermissions.includes(`w:ns-${namespace}:virtualservers`) &&
