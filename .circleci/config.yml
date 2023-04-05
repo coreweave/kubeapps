@@ -101,7 +101,7 @@ parameters:
     default: "main"
   KUBEAPPS_REPO:
     type: "string"
-    default: "vmware-tanzu/kubeapps"
+    default: "coreweave/kubeapps"
   BRANCH_KUBEAPPS_REPO:
     type: "string"
     default: "main"
@@ -653,7 +653,7 @@ gke_test: &gke_test
 
 jobs:
   test_go:
-    working_directory: /home/circleci/go/src/github.com/vmware-tanzu/kubeapps
+    working_directory: /home/circleci/go/src/github.com/coreweave/kubeapps
     environment:
       CGO_ENABLED: "0"
       <<: *common_envars
@@ -677,7 +677,7 @@ jobs:
             docker run -d --name postgresql --rm --publish 5432:5432 -e ALLOW_EMPTY_PASSWORD=yes bitnami/postgresql:${POSTGRESQL_VERSION}
             docker run --network container:postgresql -d --name tests cimg/go:${GOLANG_VERSION} tail -f /dev/null
             docker cp /home/circleci/go tests:/
-            docker exec -it tests /bin/sh -c "cd /go/src/github.com/vmware-tanzu/kubeapps/ && make test-db"
+            docker exec -it tests /bin/sh -c "cd /go/src/github.com/coreweave/kubeapps/ && make test-db"
   test_dashboard:
     environment:
       # Note that the max old space setting is per worker, so running the tests
@@ -737,7 +737,7 @@ jobs:
         auth:
           username: $DOCKER_USERNAME
           password: $DOCKER_PASSWORD
-    working_directory: /home/circleci/go/src/github.com/vmware-tanzu/kubeapps
+    working_directory: /home/circleci/go/src/github.com/coreweave/kubeapps
     environment:
       GOPATH: ${HOME}/.go_workspace
       IMAGES: "apprepository-controller asset-syncer kubeapps-apis"
@@ -782,7 +782,7 @@ jobs:
       - checkout
       - <<: *exports
       # TODO(agamez): build only if dependencies change
-      # See https://github.com/vmware-tanzu/kubeapps/pull/5083
+      # See https://github.com/coreweave/kubeapps/pull/5083
       - run:
           name: Build and push CI image
           command: |
