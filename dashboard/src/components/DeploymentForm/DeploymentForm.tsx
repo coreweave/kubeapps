@@ -10,6 +10,7 @@ import AvailablePackageDetailExcerpt from "components/Catalog/AvailablePackageDe
 import Alert from "components/js/Alert";
 import Column from "components/js/Column";
 import Row from "components/js/Row";
+import Button from "components/js/Button";
 import LoadingWrapper from "components/LoadingWrapper";
 import PackageHeader from "components/PackageHeader/PackageHeader";
 import { push } from "connected-react-router";
@@ -67,6 +68,8 @@ export default function DeploymentForm() {
   const error = apps.error || selectedPackage.error;
 
   const [pluginObj] = useState({ name: pluginName, version: pluginVersion } as Plugin);
+  const [canDeploy, setCanDeploy] = useState(false);
+  const [hasCheckedPermission, setHasCheckedPermission] = useState(false);
 
   const onChangeSA = (e: React.FormEvent<HTMLSelectElement>) => {
     setReconciliationOptions({
@@ -128,6 +131,80 @@ export default function DeploymentForm() {
   const handleReleaseNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setReleaseName(e.target.value);
   };
+
+  function getCookie(name: any) {
+    const value = `; ${document.cookie}`;
+    const parts = value?.split(`; ${name}=`);
+    if (parts && parts.length === 2) {
+      return parts.pop()?.split(";").shift();
+    } else {
+      return null;
+    }
+  }
+
+  const cloudDomain = window.location.origin.replace(/apps/g, "cloud");
+  const csrfToken = window.location.origin.includes("apps.staging.coreweave")
+    ? getCookie("csrftoken_sta")
+    : getCookie("csrftoken");
+  useEffect(() => {
+    fetch(`${cloudDomain}/api/`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrftoken": csrfToken || "",
+      },
+      body: JSON.stringify({
+        query: `
+        query User {
+          user {
+              ... on User {
+                  id
+                  email
+                  hasPassword
+                  mfaEnabled
+                  firstName
+                  lastName
+                  organization {
+                      id
+                      subscribed
+                      displayName
+                      latestSiftDecision
+                  }
+                  permissions
+                  userSettings {
+                      defaultNamespace
+                  }
+                  __typename
+              }
+      
+              ... on Errors {
+                  code
+                  errors {
+                      message
+                      path
+                  }
+              }
+          }
+        }
+      `,
+      }),
+    })
+      .then(res => res.json())
+      .then(result => {
+        const userPermissions = result.data.user.permissions;
+        if (
+          userPermissions.includes(`w:ns-${targetNamespace}:full`) ||
+          (userPermissions.includes(`w:ns-${targetNamespace}:virtualservers`) &&
+            selectedPackage.availablePackageDetail?.name === "virtual-server")
+        ) {
+          setCanDeploy(true);
+        } else {
+          setCanDeploy(false);
+        }
+        setHasCheckedPermission(true);
+      });
+  });
 
   const handleDeploy = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -202,74 +279,97 @@ export default function DeploymentForm() {
           Hang tight, the application is being deployed...
         </h3>
       )}
-      <LoadingWrapper loaded={!isDeploying}>
+      <LoadingWrapper loaded={!isDeploying && hasCheckedPermission}>
         <Row>
           <Column span={3}>
             <AvailablePackageDetailExcerpt pkg={selectedPackage.availablePackageDetail} />
           </Column>
           <Column span={9}>
-            {error && <Alert theme="danger">An error occurred: {error.message}</Alert>}
-            <form onSubmit={handleDeploy} ref={formRef}>
-              <CdsFormGroup
-                validate={true}
-                className="deployment-form"
-                layout="vertical"
-                controlWidth="shrink"
+            {!canDeploy && hasCheckedPermission ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  padding: "80px 200px",
+                }}
               >
-                <CdsInput>
-                  <label>Name</label>
-                  <input
-                    id="releaseName"
-                    pattern={k8sObjectNameRegex}
-                    title="Use lowercase alphanumeric characters, '-' or '.'"
-                    onChange={handleReleaseNameChange}
-                    value={releaseName}
-                    required={true}
+                <h2
+                  style={{
+                    textAlign: "center",
+                    paddingBottom: "20px",
+                  }}
+                >
+                  {`You do not have access to our ${selectedPackage.availablePackageDetail?.name} application 😞. Please reach out to our support team to get your account upgraded.`}
+                </h2>
+                <Button externalLink={`${cloudDomain}/contact`}>Request permission upgrade</Button>
+              </div>
+            ) : (
+              <>
+                {error && <Alert theme="danger">An error occurred: {error.message}</Alert>}
+                <form onSubmit={handleDeploy} ref={formRef}>
+                  <CdsFormGroup
+                    validate={true}
+                    className="deployment-form"
+                    layout="vertical"
+                    controlWidth="shrink"
+                  >
+                    <CdsInput>
+                      <label>Name</label>
+                      <input
+                        id="releaseName"
+                        pattern={k8sObjectNameRegex}
+                        title="Use lowercase alphanumeric characters, '-' or '.'"
+                        onChange={handleReleaseNameChange}
+                        value={releaseName}
+                        required={true}
+                      />
+                      <CdsControlMessage error="valueMissing">
+                        A descriptive name for this application
+                      </CdsControlMessage>
+                    </CdsInput>
+                    {
+                      // TODO(agamez): let plugins define their own components instead of hardcoding the logic here
+                      getPluginsAllowingSA().includes(pluginObj.name) ? (
+                        <>
+                          <CdsSelect layout="horizontal" id="serviceaccount-selector">
+                            <label>Service Account</label>
+                            <select
+                              value={reconciliationOptions.serviceAccountName}
+                              onChange={onChangeSA}
+                              required={getPluginsRequiringSA().includes(pluginObj.name)}
+                            >
+                              <option key=""></option>
+                              {serviceAccountList?.map(o => (
+                                <option key={o} value={o}>
+                                  {o}
+                                </option>
+                              ))}
+                            </select>
+                            <CdsControlMessage error="valueMissing">
+                              The Service Account name this application will be installed with.
+                            </CdsControlMessage>
+                          </CdsSelect>
+                        </>
+                      ) : (
+                        <></>
+                      )
+                    }
+                  </CdsFormGroup>
+                  <DeploymentFormBody
+                    deploymentEvent="install"
+                    packageId={packageId}
+                    packageVersion={packageVersion!}
+                    packagesIsFetching={packagesIsFetching}
+                    selected={selectedPackage}
+                    setValues={handleValuesChange}
+                    appValues={appValues}
+                    setValuesModified={setValuesModifiedTrue}
+                    formRef={formRef}
                   />
-                  <CdsControlMessage error="valueMissing">
-                    A descriptive name for this application
-                  </CdsControlMessage>
-                </CdsInput>
-                {
-                  // TODO(agamez): let plugins define their own components instead of hardcoding the logic here
-                  getPluginsAllowingSA().includes(pluginObj.name) ? (
-                    <>
-                      <CdsSelect layout="horizontal" id="serviceaccount-selector">
-                        <label>Service Account</label>
-                        <select
-                          value={reconciliationOptions.serviceAccountName}
-                          onChange={onChangeSA}
-                          required={getPluginsRequiringSA().includes(pluginObj.name)}
-                        >
-                          <option key=""></option>
-                          {serviceAccountList?.map(o => (
-                            <option key={o} value={o}>
-                              {o}
-                            </option>
-                          ))}
-                        </select>
-                        <CdsControlMessage error="valueMissing">
-                          The Service Account name this application will be installed with.
-                        </CdsControlMessage>
-                      </CdsSelect>
-                    </>
-                  ) : (
-                    <></>
-                  )
-                }
-              </CdsFormGroup>
-              <DeploymentFormBody
-                deploymentEvent="install"
-                packageId={packageId}
-                packageVersion={packageVersion!}
-                packagesIsFetching={packagesIsFetching}
-                selected={selectedPackage}
-                setValues={handleValuesChange}
-                appValues={appValues}
-                setValuesModified={setValuesModifiedTrue}
-                formRef={formRef}
-              />
-            </form>
+                </form>
+              </>
+            )}
           </Column>
         </Row>
       </LoadingWrapper>
