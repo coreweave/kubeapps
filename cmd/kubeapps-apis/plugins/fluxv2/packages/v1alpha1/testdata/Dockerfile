@@ -3,7 +3,7 @@
 
 # this Dockerfile is for building a docker image for a pod that can be deployed into a k8s cluster
 # that serves some of the content of test-data (index.yaml, charts .tgz)
-FROM nginx:1.23.1
+FROM nginx:1.25.2
 COPY ./nginx.conf /etc/nginx/nginx.conf
 
 # only has a single user: foo, password: bar
