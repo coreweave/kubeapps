@@ -20,7 +20,7 @@ export interface IAppListProps {
 }
 
 function AppListGrid(props: IAppListProps) {
-  const { appList, customResources, cluster, namespace, appVersion, filter } = props;
+  const { appList, customResources, cluster, namespace, filter } = props;
   const filteredReleases = (appList || []).filter(a =>
     new RegExp(escapeRegExp(filter), "i").test(a.name),
   );
@@ -37,7 +37,7 @@ function AppListGrid(props: IAppListProps) {
           Start browsing your <Link to={url.app.catalog(cluster, namespace)}>favourite apps</Link>{" "}
           or check the{" "}
           <a
-            href={`https://github.com/kubeapps/kubeapps/blob/${appVersion}/docs/user/getting-started.md`}
+            href="https://docs.coreweave.com/cloud-ui/applications-catalog"
             target="_blank"
             rel="noopener noreferrer"
           >
